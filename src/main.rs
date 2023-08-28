@@ -178,12 +178,12 @@ fn upload(data: Data) -> content::Json<String> {
 
     // Generate QR code
     // let code = QrCode::new(format!("File name: {}\nContact: {}\nURL: {}\nIPFS: {}", file_name, contact, url, ipfs)).unwrap();
-    //let image = code.render::<Luma<u8>>().build();
-    //image.save("uploads/qr.png").unwrap();
+    // let image = code.render::<Luma<u8>>().build();
+    // image.save("uploads/qr.png").unwrap();
 
 
 
-    // Write ahash and dhash to a .txt file
+    // Write ahash, phash and pixelhash to a .txt file
     let mut file = File::create("uploads/hashes.txt").unwrap();
     writeln!(file, "Original image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", original_dhash, original_ahash, original_hash).ok();
     writeln!(file, "Cropped image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", middle_dhash, middle_ahash, cropped_hash).ok();
@@ -222,7 +222,7 @@ fn upload(data: Data) -> content::Json<String> {
 
 fn main() {
     let allowed_origins = AllowedOrigins::some_exact(&[
-        "http://localhost:8000",  // replace with the origin you want to allow
+        "http://localhost:8000",
     ]);
 
     let cors = CorsOptions {
