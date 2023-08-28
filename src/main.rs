@@ -177,7 +177,7 @@ fn upload(data: Data) -> content::Json<String> {
     });
 
     // Generate QR code
-//    let code = QrCode::new(format!("File name: {}\nContact: {}\nURL: {}\nIPFS: {}", file_name, contact, url, ipfs)).unwrap();
+    // let code = QrCode::new(format!("File name: {}\nContact: {}\nURL: {}\nIPFS: {}", file_name, contact, url, ipfs)).unwrap();
     //let image = code.render::<Luma<u8>>().build();
     //image.save("uploads/qr.png").unwrap();
 
@@ -189,10 +189,6 @@ fn upload(data: Data) -> content::Json<String> {
     writeln!(file, "Cropped image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", middle_dhash, middle_ahash, cropped_hash).ok();
     writeln!(file, "Parts image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", parts_dhash, parts_ahash, parts_hash).ok();
     writeln!(file, "Recombined image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", recombined_dhash, recombined_ahash, recombined_hash).ok();
-
-    // ... (your existing code)
-
-    // Add the hashes .txt file to the .zip file
 
     // Create a .zip file
     let path = Path::new("uploads/archive.zip");
