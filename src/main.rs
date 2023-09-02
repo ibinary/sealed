@@ -18,6 +18,7 @@ use zip::write::FileOptions;
 use zip::CompressionMethod::Stored;
 use std::hash::{Hash, Hasher};
 use fnv::FnvHasher;
+use std::fs;
 
 const PART_SIZE: u32 = 20;
 const HASH_SIZE: u32 = 32;
@@ -82,6 +83,7 @@ fn uploads(file: PathBuf) -> Option<NamedFile> {
 #[post("/", data = "<data>")]
 fn upload(data: Data) -> content::Json<String> {
     // Read the image data
+    fs::create_dir_all("uploads").unwrap();
     let mut img_data = vec![];
     if let Err(e) = data.stream_to(&mut img_data) {
         return content::Json(json!({ "error": format!("Error reading image data: {}", e) }).to_string());
@@ -177,22 +179,18 @@ fn upload(data: Data) -> content::Json<String> {
     });
 
     // Generate QR code
-//    let code = QrCode::new(format!("File name: {}\nContact: {}\nURL: {}\nIPFS: {}", file_name, contact, url, ipfs)).unwrap();
-    //let image = code.render::<Luma<u8>>().build();
-    //image.save("uploads/qr.png").unwrap();
+    // let code = QrCode::new(format!("File name: {}\nContact: {}\nURL: {}\nIPFS: {}", file_name, contact, url, ipfs)).unwrap();
+    // let image = code.render::<Luma<u8>>().build();
+    // image.save("uploads/qr.png").unwrap();
 
 
 
-    // Write ahash and dhash to a .txt file
+    // Write ahash, phash and pixelhash to a .txt file
     let mut file = File::create("uploads/hashes.txt").unwrap();
     writeln!(file, "Original image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", original_dhash, original_ahash, original_hash).ok();
     writeln!(file, "Cropped image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", middle_dhash, middle_ahash, cropped_hash).ok();
     writeln!(file, "Parts image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", parts_dhash, parts_ahash, parts_hash).ok();
     writeln!(file, "Recombined image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", recombined_dhash, recombined_ahash, recombined_hash).ok();
-
-    // ... (your existing code)
-
-    // Add the hashes .txt file to the .zip file
 
     // Create a .zip file
     let path = Path::new("uploads/archive.zip");
@@ -224,9 +222,33 @@ fn upload(data: Data) -> content::Json<String> {
     content::Json(response.to_string())
  }
 
+#[cfg(test)]
+mod tests {
+    // test image upload and hash generation
+    #[test]
+    fn test_image_upload() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_hash() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_dhash() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_ahash() {
+        // TODO add tests
+    }
+}
+
 fn main() {
     let allowed_origins = AllowedOrigins::some_exact(&[
-        "http://localhost:8000",  // replace with the origin you want to allow
+        "http://localhost:8000",
     ]);
 
     let cors = CorsOptions {
