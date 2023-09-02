@@ -220,6 +220,31 @@ fn upload(data: Data) -> content::Json<String> {
     content::Json(response.to_string())
  }
 
+#[cfg(test)]
+mod tests {
+    // test image upload and hash generation
+    
+    #[test]
+    fn test_image_upload() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_hash() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_dhash() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_ahash() {
+        // TODO add tests
+    }
+}
+
 fn main() {
     let allowed_origins = AllowedOrigins::some_exact(&[
         "http://localhost:8000",
