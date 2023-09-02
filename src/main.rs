@@ -18,6 +18,7 @@ use zip::write::FileOptions;
 use zip::CompressionMethod::Stored;
 use std::hash::{Hash, Hasher};
 use fnv::FnvHasher;
+use std::fs;
 
 const PART_SIZE: u32 = 20;
 const HASH_SIZE: u32 = 32;
@@ -82,6 +83,7 @@ fn uploads(file: PathBuf) -> Option<NamedFile> {
 #[post("/", data = "<data>")]
 fn upload(data: Data) -> content::Json<String> {
     // Read the image data
+    fs::create_dir_all("uploads").unwrap();
     let mut img_data = vec![];
     if let Err(e) = data.stream_to(&mut img_data) {
         return content::Json(json!({ "error": format!("Error reading image data: {}", e) }).to_string());
@@ -219,6 +221,30 @@ fn upload(data: Data) -> content::Json<String> {
     // Return the JSON response
     content::Json(response.to_string())
  }
+
+#[cfg(test)]
+mod tests {
+    // test image upload and hash generation
+    #[test]
+    fn test_image_upload() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_hash() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_dhash() {
+        // TODO add tests
+    }
+
+    #[test]
+    fn test_image_ahash() {
+        // TODO add tests
+    }
+}
 
 fn main() {
     let allowed_origins = AllowedOrigins::some_exact(&[
