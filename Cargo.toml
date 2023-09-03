@@ -12,6 +12,7 @@ zip = "0.5.13"
 qrcode = "0.12.0"
 rocket-multipart-form-data = "0.9.0-rc.1"
 fnv = "1.0.7"
+rand = "0.8"
 
 [[bin]]
 name = "sealed-ch"

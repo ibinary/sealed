@@ -3,6 +3,9 @@
 #[macro_use] extern crate rocket;
 extern crate image;
 
+use rand::Rng;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use rocket::Data;
 use rocket::response::content;
 use std::path::{Path, PathBuf};
@@ -65,6 +68,19 @@ fn dhash(img: &GrayImage, hash_size: u32) -> u64 {
     dhash
 }
 
+fn generate_uuid() -> String {
+    let start = SystemTime::now();
+    let since_the_epoch = start.duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    let in_ms = since_the_epoch.as_secs() * 1000 +
+        since_the_epoch.subsec_nanos() as u64 / 1_000_000;
+
+    let mut rng = rand::thread_rng();
+    let random: u64 = rng.gen();
+
+    format!("{:x}-{:x}", in_ms, random)
+}
+
 #[get("/")]
 fn index() -> Option<NamedFile> {
     NamedFile::open(Path::new("static/").join("index.html")).ok()
@@ -82,19 +98,29 @@ fn uploads(file: PathBuf) -> Option<NamedFile> {
 
 #[post("/", data = "<data>")]
 fn upload(data: Data) -> content::Json<String> {
+    // Generate a UUID for this upload operation
+    let uuid = generate_uuid();
+
+    // Create a new directory for this upload operation
+    let upload_dir = format!("uploads/{}", uuid);
+    std::fs::create_dir_all(&upload_dir).unwrap();
+
     // Read the image data
-    fs::create_dir_all("uploads").unwrap();
     let mut img_data = vec![];
     if let Err(e) = data.stream_to(&mut img_data) {
         return content::Json(json!({ "error": format!("Error reading image data: {}", e) }).to_string());
     }
+
     // Open the image file
     let img = image::load_from_memory(&img_data).unwrap();
     let (width, height) = img.dimensions();
     let img_gray = img.to_luma8();
+
     // Save a copy of the original image
-    img.save("uploads/original.png").unwrap();
-    let img = image::open("uploads/original.png").unwrap();
+    let original_path = format!("{}/original.png", upload_dir);
+    img.save(&original_path).unwrap();
+    let img = image::open(&original_path).unwrap();
+
     // Split the image into top, bottom, left, right and middle parts
     let top_part = img.view(0, 0, width, PART_SIZE).to_image();
     let bottom_part = img.view(0, height - PART_SIZE, width, PART_SIZE).to_image();
@@ -112,7 +138,8 @@ fn upload(data: Data) -> content::Json<String> {
     image::imageops::replace(&mut parts_img, &right_part, width - 20, 20);
 
     // Save the parts image to a file
-    parts_img.save_with_format("uploads/parts.png", ImageFormat::Png).unwrap();
+    let parts_path = format!("{}/parts.png", upload_dir);
+    parts_img.save_with_format(&parts_path, ImageFormat::Png).unwrap();
 
     // Create a new image to hold the recombined parts
     let mut recombined_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
@@ -125,7 +152,8 @@ fn upload(data: Data) -> content::Json<String> {
     image::imageops::replace(&mut recombined_img, &middle_part, 20, 20);
 
     // Save the recombined image to a file
-    recombined_img.save_with_format("uploads/recombined.png", ImageFormat::Png).unwrap();
+    let recombined_path = format!("{}/recombined.png", upload_dir);
+    recombined_img.save_with_format(&recombined_path, ImageFormat::Png).unwrap();
 
     // Create a new image to hold the middle part
     let mut middle_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
@@ -134,7 +162,8 @@ fn upload(data: Data) -> content::Json<String> {
     image::imageops::replace(&mut middle_img, &middle_part, 20, 20);
 
     // Save the middle image to a file
-    middle_img.save_with_format("uploads/cropped.png", ImageFormat::Png).unwrap();
+    let cropped_path = format!("{}/cropped.png", upload_dir);
+    middle_img.save_with_format(&cropped_path, ImageFormat::Png).unwrap();
 
     // Convert the images to grayscale before calculating the dHash and aHash
     let original_dhash = dhash(&img_gray, HASH_SIZE);
@@ -159,21 +188,22 @@ fn upload(data: Data) -> content::Json<String> {
     let parts_hash = image_hash(&DynamicImage::ImageRgba8(parts_img_clone));
     let cropped_hash = image_hash(&DynamicImage::ImageRgba8(middle_img_clone));
     let recombined_hash = image_hash(&DynamicImage::ImageRgba8(recombined_img_clone));
+
     let response = json!({
-        "originalImagePath": "uploads/original.png",
+        "originalImagePath": format!("{}/original.png", upload_dir),
         "originalDhash": format!("{:016x}", original_dhash),
         "originalAhash": format!("{:016x}", original_ahash),
-        "partsImagePath": "uploads/parts.png",
+        "partsImagePath": format!("{}/parts.png", upload_dir),
         "partsDhash": format!("{:016x}", parts_dhash),
         "partsAhash": format!("{:016x}", parts_ahash),
-        "croppedImagePath": "uploads/cropped.png",
+        "croppedImagePath": format!("{}/cropped.png", upload_dir),
         "originalImageHash": format!("{:016x}", original_hash),
         "partsImageHash": format!("{:016x}", parts_hash),
         "croppedImageHash": format!("{:016x}", cropped_hash),
         "recombinedImageHash": format!("{:016x}", recombined_hash),
         "croppedImageDhash": format!("{:016x}", middle_dhash),
         "croppedImageAhash": format!("{:016x}", middle_ahash),
-        "recombinedImagePath": "uploads/recombined.png",
+        "recombinedImagePath": format!("{}/recombined.png", upload_dir),
         "recombinedDhash": format!("{:016x}", recombined_dhash),
         "recombinedAhash": format!("{:016x}", recombined_ahash)
     });
@@ -183,17 +213,16 @@ fn upload(data: Data) -> content::Json<String> {
     // let image = code.render::<Luma<u8>>().build();
     // image.save("uploads/qr.png").unwrap();
 
-
-
     // Write ahash, phash and pixelhash to a .txt file
-    let mut file = File::create("uploads/hashes.txt").unwrap();
+    let mut file = File::create(format!("{}/hashes.txt", upload_dir)).unwrap();
     writeln!(file, "Original image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", original_dhash, original_ahash, original_hash).ok();
     writeln!(file, "Cropped image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", middle_dhash, middle_ahash, cropped_hash).ok();
     writeln!(file, "Parts image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", parts_dhash, parts_ahash, parts_hash).ok();
     writeln!(file, "Recombined image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", recombined_dhash, recombined_ahash, recombined_hash).ok();
 
     // Create a .zip file
-    let path = Path::new("uploads/archive.zip");
+    let path_str = format!("{}/archive.zip", upload_dir);
+    let path = Path::new(&path_str);
     let file = File::create(&path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
     let options = FileOptions::default()
@@ -202,17 +231,17 @@ fn upload(data: Data) -> content::Json<String> {
 
     // Add the cropped image to the .zip file
     zip.start_file("cropped.png", options).unwrap();
-    let img_data = std::fs::read("uploads/cropped.png").unwrap();
+    let img_data = std::fs::read(&cropped_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
     // Add the parts image to the .zip file
     zip.start_file("parts.png", options).unwrap();
-    let img_data = std::fs::read("uploads/parts.png").unwrap();
+    let img_data = std::fs::read(&parts_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
     // Add the checksums .txt file to the .zip file
     zip.start_file("hashes.txt", options).unwrap();
-    let txt_data = std::fs::read("uploads/hashes.txt").unwrap();
+    let txt_data = std::fs::read(format!("{}/hashes.txt", upload_dir)).unwrap();
     zip.write_all(&txt_data).unwrap();
 
     // Finish the .zip file
@@ -220,7 +249,7 @@ fn upload(data: Data) -> content::Json<String> {
 
     // Return the JSON response
     content::Json(response.to_string())
- }
+}
 
 #[cfg(test)]
 mod tests {
