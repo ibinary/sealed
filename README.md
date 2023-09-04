@@ -1,5 +1,5 @@
 # sealed
-Simple Media Ownership and Copyright Protection Utility
+Simple Media Ownership, Copyright and License Protection Utility
 MIT License - Funded by iBinary LLC, Developed by Jake Kitchen and Ken Nickerson
 #
 The purpose of "sealed" is to offer open-source code to support the verification and registration of media, to offer a novel method to document ownership, provide shareable media and register CRC for permanenet file. This process provides a proof model for media ownership that is resistant to AI, decryption or other processes to alter source images (e.g. outpainting) or deliberate theft of copyright.
