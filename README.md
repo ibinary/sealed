@@ -4,7 +4,7 @@ MIT License - Developed by Jake Kitchen - Jake Kitchen - https://github.com/qqa1
 #
 The goal is to help protect original content creators for the growing incursions on their art (media) that could be proven in any process the copyright holder may engage. The expression of this goal, is "sealed" offering a simple process to protect original creator or copyright holder media. Sealed employs a novel use of a process to verify and document ownership, while providing a shareable asset. This process provides a proof-based model of ownership that is resistant to AI scrapping, GPT refactoring, decryption or other processes that may use or alter source images (e.g. outpainting) and deliberate theft of copyright.
 #
-The core idea invokes a process where media can be measured, cropped, shared, much like "edges" on paintings used for insurance process. Standard CRCs (hash) in the process can be secured personally, or on a public share like IPFS - https://www.ipfs.com or blockchain or redis or any preferred secured store.
+Sealed invokes a process where media can be measured, cropped, shared, much like "edges" on paintings used for insurance process. Standard CRCs (hash) in the process can be secured personally, or on a public share like IPFS - https://www.ipfs.com or blockchain or redis or any preferred secured store.
 #
 Process:
 1. Copyright Image uploaded to Sealed.ch OR local terminal application OR self-directed use of the open-source library - https://github.com/ibinary/sealed - integrated into custom solutions.
