@@ -17,14 +17,13 @@ Sealed invokes a process where media can be measured, cropped, shared, much like
 7. Post crop original image is available for immediate distribution.
 8. Option to include QR Code (7) to reference contact, URL, and other information for sharing.
 # Post Process:
-a. If a post-process, shared copyright image is repurposed, the original copyright owner has a documented file (1…8) to confirm ownership of original copyright material on absolute terms.
-b. Post-process .zip contains .txt and .json files that can be stored locally, or imported into a database archive.
+1. If a post-process, shared copyright image is repurposed, the original copyright owner has a documented file (1…8) to confirm ownership of original copyright material on absolute terms.
+2. Post-process .zip contains .txt and .json files that can be stored locally, or imported into a database archive.
 # Post Release 1.0:
-c. Expansion of process is possible with secure store or public share (e.g., IPFS) of post process media.
-d. Expansion of secure store to a distributed blockchain like store for immediate image compare, registration, certification.
-e. Expansion of media types to audio and video in version 2.0.
-…
-z. Legal precedent to verify the efficacy of Sealed by a copyright holder.
+1. Expansion of process is possible with secure store or public share (e.g., IPFS) of post process media.
+2. Expansion of secure store to a distributed blockchain like store for immediate image compare, registration, certification.
+3. Expansion of media types to audio and video in version 2.0.
+4. Legal precedent to verify the efficacy of Sealed by a copyright holder.
 # History:
 The idea for sealed was initiated after a chance conversation at Musée d'Orsay - https://www.musee-orsay.fr/en in 2010. I asked about the insurance process for paintings in the gallery, and learned about scanning or photographing "edges" as a prime defense against forgery. As the content industry has changed with the move from analog to digital (no (print) negatives) and more recently scrapped for use in corpus for AI, a need has grown to have a simple, secure, open-source method to secure copyright. "The Son of Man" (French: Le fils de l'homme) - https://en.wikipedia.org/wiki/The_Son_of_Man - is a 1964 painting by the Belgian surrealist painter René Magritte was chosen for Sealed.ch homepage, as a reflection of the use of this process in the popular 1999 movie "The Thomas Crown Affair" - https://en.wikipedia.org/wiki/The_Thomas_Crown_Affair_(1999_film).
 # Contact:
