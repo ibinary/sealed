@@ -2,13 +2,9 @@
 Simple Media Ownership, Copyright, and License Protection Utility
 MIT License - Developed by Jake Kitchen - Jake Kitchen - https://github.com/qqa112811 and Ken Nickerson - kenn@ibinary.com - https://github.com/kcnickerson - @kcnickerson - Sealed was privately funded by iBinary LLC.
 #
-The purpose of "sealed" is to offer a simple utility to protect original creator or copyright holder media. Sealed employs a novel use of a known method to verify and document ownership, while providing a shareable asset. This process provides a proof-based model of ownership that is resistant to AI scrapping, GPT refactoring, decryption or other processes that may use or alter source images (e.g. outpainting) and deliberate theft of copyright.
+The goal is to help protect original content creators for the growing incursions on their art (media) that could be proven in any process the copyright holder may engage. The expression of this goal, is "sealed" offering a simple process to protect original creator or copyright holder media. Sealed employs a novel use of a process to verify and document ownership, while providing a shareable asset. This process provides a proof-based model of ownership that is resistant to AI scrapping, GPT refactoring, decryption or other processes that may use or alter source images (e.g. outpainting) and deliberate theft of copyright.
 #
-The goal is to help protect original content creators for the growing incursions on their art (media) that could be proven in any process the copyright holder may engage.
-#
-The idea for sealed was initiated after a chance conversation at Musée d'Orsay - https://www.musee-orsay.fr/en in 2010. I asked about the insurance process for paintings in the gallery, and learned about scanning or photographing "edges" as a prime defense against forgery. As the content industry has changed with the move from analog to digital (no (print) negatives) and more recently scrapped for use in corpus for AI, a need has grown to have a simple, secure, open-source method to secure copyright. "The Son of Man" (French: Le fils de l'homme) - https://en.wikipedia.org/wiki/The_Son_of_Man - is a 1964 painting by the Belgian surrealist painter René Magritte was chosen for Sealed.ch homepage, as a reflection of the use of this process in the popular 1999 movie "The Thomas Crown Affair" - https://en.wikipedia.org/wiki/The_Thomas_Crown_Affair_(1999_film).
-#
-The core idea is to invoke a process where media can be measured, cropped, shared, much like "edges" on paintings used for insurance process. Standard CRCs (hash) in the process can be secured personally, or on a public share like IPFS - https://www.ipfs.com - blockchain or redis like, secured store.
+The core idea invokes a process where media can be measured, cropped, shared, much like "edges" on paintings used for insurance process. Standard CRCs (hash) in the process can be secured personally, or on a public share like IPFS - https://www.ipfs.com or blockchain or redis or any preferred secured store.
 #
 Process:
 1. Copyright Image uploaded to Sealed.ch OR local terminal application OR self-directed use of the open-source library - https://github.com/ibinary/sealed - integrated into custom solutions.
@@ -30,5 +26,7 @@ d. Expansion of secure store to a distributed blockchain like store for immediat
 e. Expansion of media types to audio and video in version 2.0.
 …
 z. Legal precedent to verify the efficacy of Sealed by a copyright holder.
+#
+The idea for sealed was initiated after a chance conversation at Musée d'Orsay - https://www.musee-orsay.fr/en in 2010. I asked about the insurance process for paintings in the gallery, and learned about scanning or photographing "edges" as a prime defense against forgery. As the content industry has changed with the move from analog to digital (no (print) negatives) and more recently scrapped for use in corpus for AI, a need has grown to have a simple, secure, open-source method to secure copyright. "The Son of Man" (French: Le fils de l'homme) - https://en.wikipedia.org/wiki/The_Son_of_Man - is a 1964 painting by the Belgian surrealist painter René Magritte was chosen for Sealed.ch homepage, as a reflection of the use of this process in the popular 1999 movie "The Thomas Crown Affair" - https://en.wikipedia.org/wiki/The_Thomas_Crown_Affair_(1999_film).
 #
 We hope others can leverage this process, code into their products, services and applications to ensure protection for the creative set, who are appreciated for their work, but often not respected in terms of attribution or compensation. If you have any suggestions, enhancements, updates, forks, all are warmly welcomed at contact@sealed.ch. Good luck!
