@@ -1168,10 +1168,12 @@ dependencies = [
  "fnv",
  "image",
  "qrcode",
+ "rand 0.8.5",
  "rocket",
  "rocket-multipart-form-data",
  "rocket_cors",
  "serde_json",
+ "uuid",
  "zip",
 ]
 
@@ -1448,6 +1450,12 @@ dependencies = [
  "idna 0.4.0",
  "percent-encoding 2.3.0",
 ]
+
+[[package]]
+name = "uuid"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
 
 [[package]]
 name = "version_check"

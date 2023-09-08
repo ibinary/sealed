@@ -1,27 +1,22 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
-#[macro_use] extern crate rocket;
+#[macro_use]
+extern crate rocket;
 extern crate image;
 
+use serde_json::to_writer_pretty;
 use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use rocket::Data;
-use rocket::response::content;
-use std::path::{Path, PathBuf};
-use rocket::response::NamedFile;
-use rocket::http::Method;
-use rocket_cors::{AllowedOrigins, CorsOptions};
 use image::{GenericImageView, ImageFormat, Rgba};
 use serde_json::json;
 use image::{imageops::FilterType, GrayImage, ImageBuffer, DynamicImage};
 use std::fs::File;
 use std::io::Write;
-use zip::write::FileOptions;
-use zip::CompressionMethod::Stored;
 use std::hash::{Hash, Hasher};
 use fnv::FnvHasher;
 use std::fs;
+use std::path::{Path, PathBuf};
+use std::env;
 
 const PART_SIZE: u32 = 20;
 const HASH_SIZE: u32 = 32;
@@ -81,91 +76,60 @@ fn generate_uuid() -> String {
     format!("{:x}-{:x}", in_ms, random)
 }
 
-#[get("/")]
-fn index() -> Option<NamedFile> {
-    NamedFile::open(Path::new("static/").join("index.html")).ok()
-}
-
-#[get("/<file..>", rank = 2)]
-fn files(file: PathBuf) -> Option<NamedFile> {
-    NamedFile::open(Path::new("static/").join(file)).ok()
-}
-
-#[get("/uploads/<file..>")]
-fn uploads(file: PathBuf) -> Option<NamedFile> {
-    NamedFile::open(Path::new("uploads/").join(file)).ok()
-}
-
-#[post("/", data = "<data>")]
-fn upload(data: Data) -> content::Json<String> {
-    // Generate a UUID for this upload operation
-    let uuid = generate_uuid();
-
-    // Create a new directory for this upload operation
-    let upload_dir = format!("uploads/{}", uuid);
-    std::fs::create_dir_all(&upload_dir).unwrap();
-
-    // Read the image data
-    let mut img_data = vec![];
-    if let Err(e) = data.stream_to(&mut img_data) {
-        return content::Json(json!({ "error": format!("Error reading image data: {}", e) }).to_string());
-    }
-
-    // Open the image file
-    let img = image::load_from_memory(&img_data).unwrap();
+fn process_image(image_file: &str) {
+    let img = image::open(image_file).unwrap();
     let (width, height) = img.dimensions();
     let img_gray = img.to_luma8();
 
-    // Save a copy of the original image
+    let file_name = Path::new(image_file).file_name().unwrap().to_str().unwrap();
+    let upload_dir = format!("uploads/{}-{}", file_name, generate_uuid());
+    std::fs::create_dir_all(&upload_dir).unwrap();
     let original_path = format!("{}/original.png", upload_dir);
     img.save(&original_path).unwrap();
     let img = image::open(&original_path).unwrap();
 
-    // Split the image into top, bottom, left, right and middle parts
     let top_part = img.view(0, 0, width, PART_SIZE).to_image();
     let bottom_part = img.view(0, height - PART_SIZE, width, PART_SIZE).to_image();
     let left_part = img.view(0, PART_SIZE, PART_SIZE, height - 2 * PART_SIZE).to_image();
     let right_part = img.view(width - PART_SIZE, PART_SIZE, PART_SIZE, height - 2 * PART_SIZE).to_image();
     let middle_part = img.view(PART_SIZE, PART_SIZE, width - 2 * PART_SIZE, height - 2 * PART_SIZE).to_image();
 
-    // Create a new image to hold the four parts
     let mut parts_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
-
-    // Paste the top, bottom, left and right parts into the new image
     image::imageops::replace(&mut parts_img, &top_part, 0, 0);
     image::imageops::replace(&mut parts_img, &bottom_part, 0, height - 20);
     image::imageops::replace(&mut parts_img, &left_part, 0, 20);
     image::imageops::replace(&mut parts_img, &right_part, width - 20, 20);
 
-    // Save the parts image to a file
-    let parts_path = format!("{}/parts.png", upload_dir);
+    let parts_path = format!("{}/frame.png", upload_dir);
     parts_img.save_with_format(&parts_path, ImageFormat::Png).unwrap();
 
-    // Create a new image to hold the recombined parts
     let mut recombined_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
-
-    // Paste (recombine) the top, bottom, left, right and middle parts into the new (recombined) image
     image::imageops::replace(&mut recombined_img, &top_part, 0, 0);
     image::imageops::replace(&mut recombined_img, &bottom_part, 0, height - 20);
     image::imageops::replace(&mut recombined_img, &left_part, 0, 20);
     image::imageops::replace(&mut recombined_img, &right_part, width - 20, 20);
     image::imageops::replace(&mut recombined_img, &middle_part, 20, 20);
 
-    // Save the recombined image to a file
     let recombined_path = format!("{}/recombined.png", upload_dir);
     recombined_img.save_with_format(&recombined_path, ImageFormat::Png).unwrap();
 
-    // Create a new image to hold the middle part
     let mut middle_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+    let mut cropped_no_whitespace_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+    image::imageops::replace(&mut cropped_no_whitespace_img, &middle_part, 20, 20);
 
-    // Paste the middle part into the new image
+    for pixel in cropped_no_whitespace_img.pixels_mut() {
+        if pixel[0] == 255 && pixel[1] == 255 && pixel[2] == 255 {
+            *pixel = Rgba([0, 0, 0, 0]);
+        }
+    }
+
+    let cropped_no_whitespace_path = format!("{}/share.png", upload_dir);
+    cropped_no_whitespace_img.save_with_format(&cropped_no_whitespace_path, ImageFormat::Png).unwrap();
+
     image::imageops::replace(&mut middle_img, &middle_part, 20, 20);
-
-    // Save the middle image to a file
     let cropped_path = format!("{}/cropped.png", upload_dir);
     middle_img.save_with_format(&cropped_path, ImageFormat::Png).unwrap();
 
-    // Convert the images to grayscale before calculating the dHash and aHash
     let original_dhash = dhash(&img_gray, HASH_SIZE);
     let original_ahash = ahash(&img_gray, HASH_SIZE);
 
@@ -193,7 +157,7 @@ fn upload(data: Data) -> content::Json<String> {
         "originalImagePath": format!("{}/original.png", upload_dir),
         "originalDhash": format!("{:016x}", original_dhash),
         "originalAhash": format!("{:016x}", original_ahash),
-        "partsImagePath": format!("{}/parts.png", upload_dir),
+        "partsImagePath": format!("{}/frame.png", upload_dir),
         "partsDhash": format!("{:016x}", parts_dhash),
         "partsAhash": format!("{:016x}", parts_ahash),
         "croppedImagePath": format!("{}/cropped.png", upload_dir),
@@ -205,93 +169,86 @@ fn upload(data: Data) -> content::Json<String> {
         "croppedImageAhash": format!("{:016x}", middle_ahash),
         "recombinedImagePath": format!("{}/recombined.png", upload_dir),
         "recombinedDhash": format!("{:016x}", recombined_dhash),
-        "recombinedAhash": format!("{:016x}", recombined_ahash)
+        "recombinedAhash": format!("{:016x}", recombined_ahash),
+        "archiveURL": format!("{}", upload_dir),
     });
 
-    // Generate QR code
-    // let code = QrCode::new(format!("File name: {}\nContact: {}\nURL: {}\nIPFS: {}", file_name, contact, url, ipfs)).unwrap();
-    // let image = code.render::<Luma<u8>>().build();
-    // image.save("uploads/qr.png").unwrap();
+    // Save the response JSON to a file
+    let mut file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
+    let response_json = serde_json::to_string_pretty(&response).unwrap();
+    let mut response_file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
+    response_file.write_all(response_json.as_bytes()).unwrap();
 
-    // Write ahash, phash and pixelhash to a .txt file
     let mut file = File::create(format!("{}/hashes.txt", upload_dir)).unwrap();
     writeln!(file, "Original image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", original_dhash, original_ahash, original_hash).ok();
     writeln!(file, "Cropped image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", middle_dhash, middle_ahash, cropped_hash).ok();
-    writeln!(file, "Parts image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", parts_dhash, parts_ahash, parts_hash).ok();
+    writeln!(file, "Frame image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", parts_dhash, parts_ahash, parts_hash).ok();
     writeln!(file, "Recombined image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", recombined_dhash, recombined_ahash, recombined_hash).ok();
 
-    // Create a .zip file
-    let path_str = format!("{}/archive.zip", upload_dir);
+    let archive_name = format!("{}.zip", file_name);
+    let path_str = format!("{}/{}", upload_dir, archive_name);
     let path = Path::new(&path_str);
     let file = File::create(&path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
-    let options = FileOptions::default()
-        .compression_method(Stored)
+    let options = zip::write::FileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
         .unix_permissions(0o755);
 
-    // Add the cropped image to the .zip file
+
     zip.start_file("cropped.png", options).unwrap();
     let img_data = std::fs::read(&cropped_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
-    // Add the parts image to the .zip file
-    zip.start_file("parts.png", options).unwrap();
+    zip.start_file("original.png", options).unwrap();
+    let img_data = std::fs::read(&cropped_path).unwrap();
+    zip.write_all(&img_data).unwrap();
+
+    zip.start_file("frame.png", options).unwrap();
     let img_data = std::fs::read(&parts_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
-    // Add the checksums .txt file to the .zip file
     zip.start_file("hashes.txt", options).unwrap();
     let txt_data = std::fs::read(format!("{}/hashes.txt", upload_dir)).unwrap();
     zip.write_all(&txt_data).unwrap();
 
-    // Finish the .zip file
+    zip.start_file("hashes.json", options).unwrap();
+    let json_data = std::fs::read(format!("{}/hashes.json", upload_dir)).unwrap();
+    zip.write_all(&json_data).unwrap();
+
     zip.finish().unwrap();
 
-    // Return the JSON response
-    content::Json(response.to_string())
+    println!("Response: {}", response);
 }
 
-#[cfg(test)]
-mod tests {
-    // test image upload and hash generation
-    
-    #[test]
-    fn test_image_upload() {
-        // TODO add tests
-    }
+fn process_directory(directory: &str) {
+    let paths = fs::read_dir(directory).unwrap();
 
-    #[test]
-    fn test_image_hash() {
-        // TODO add tests
-    }
-
-    #[test]
-    fn test_image_dhash() {
-        // TODO add tests
-    }
-
-    #[test]
-    fn test_image_ahash() {
-        // TODO add tests
+    for path in paths {
+        let entry = path.unwrap();
+        let file_name = entry.file_name().into_string().unwrap();
+        let file_path = entry.path();
+        let extension = file_path.extension().unwrap_or_default();
+        if extension == "png" || extension == "jpg" || extension == "jpeg" {
+            println!("Processing image file: {:?}", file_path);
+            process_image(file_path.to_str().unwrap());
+            println!("------------------------------");
+        }
     }
 }
 
 fn main() {
-    let allowed_origins = AllowedOrigins::some_exact(&[
-        "http://localhost:8000",
-    ]);
+    let args: Vec<String> = env::args().collect();
 
-    let cors = CorsOptions {
-        allowed_origins,
-        allowed_methods: vec![Method::Get, Method::Post].into_iter().map(From::from).collect(),
-        allow_credentials: true,
-        ..Default::default()
+    if args.len() < 2 {
+        println!("Please provide a file or directory as an argument");
+        return;
     }
-    .to_cors()
-    .expect("error while building CORS");
 
-    rocket::ignite()
-    .mount("/", routes![index, files, upload, uploads])
-    .attach(cors)
-    .launch();
+    let path = &args[1];
+
+    if Path::new(path).is_dir() {
+        process_directory(path);
+    } else {
+        process_image(path);
+    }
 }

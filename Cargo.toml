@@ -4,6 +4,7 @@ version = "0.0.1"
 edition = "2018"
 
 [dependencies]
+bzip2 = "0.4"
 rocket = "0.4.10"
 rocket_cors = "0.5.2"
 image = "0.23.14"
@@ -12,8 +13,9 @@ zip = "0.5.13"
 qrcode = "0.12.0"
 rocket-multipart-form-data = "0.9.0-rc.1"
 fnv = "1.0.7"
-rand = "0.8"
-
+rand = "0.8.4"
+structopt = "0.3"
+walkdir = "2"
 [[bin]]
 name = "sealed-ch"
 path = "src/main.rs"
