@@ -1,7 +1,6 @@
 # Sealed
 Simple Media Ownership, Copyright, and License Protection Utility
-MIT License - Developed by Jake Kitchen - Jake Kitchen - https://github.com/qqa112811 and Ken Nickerson - kenn@ibinary.com - https://github.com/kcnickerson - @kcnickerson - Sealed was privately funded by iBinary LLC.
-# Goal:
+MIT License - Developed by Jake Kitchen - Jake Kitchen - https://github.com/qqa112811 and Ken Nickerson - kenn@ibinary.com - https://github.com/kcnickerson - @kcnickerson - Sealed was privately funded by iBinary LLC. Follow Sealed on Twitter - https://twitter.com/sealedch
 The goal is to help protect original content creators from the growing incursions on their art (media), that could be proven manually, automatically or legally in any process the copyright holder may engage. 
 The expression of this goal, is "sealed" offering a simple process to protect original creator or copyright holder media, intially for images with video and text to follow in Sealed v2.0. 
 Sealed employs a novel use of a process to verify and document ownership, while providing an immediatly shareable asset. This process provides a proof-based model of ownership that is resistant to AI scrapping, GPT refactoring, decryption or other processes that may use or alter source images (e.g. outpainting) and deliberate theft of copyright.
