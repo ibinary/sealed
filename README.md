@@ -1,39 +1,37 @@
-# sealed
-Simple Media Ownership and Copyright Protection Utility
-MIT License - Funded by iBinary LLC, Developed by Jake Kitchen and Ken Nickerson
-#
-The purpose of "sealed" is to offer open-source code to support the verification and registration of media, to offer a novel method to document ownership, provide shareable media and register CRC for permanenet file. This process provides a proof model for media ownership that is resistant to AI, decryption or other processes to alter source images (e.g. outpainting) or deliberate theft of copyright.
-#
-The goal is to help protect original content creators for the growing incursions on their "art" (media) that could be proven in any process the copyright holder may engage.
-#
-The idea for sealed was the secondary effect of a chance conversation at Musée d'Orsay - https://www.musee-orsay.fr/en in early 2000s when asking about the insurance process for paintings in the gallery. As the content industry has changed with the move from analog to digital (no (print) negatives) and more recently use in corpus for AI, a need has grown to have a simple, secure, open0source method to secure copyright.
-#
-iBinary LLC funded this development, idea/architecutre by Ken Nickerson, execution (code) by Jake Kitchen.
+# Sealed
+Simple Media Ownership, Copyright, and License Protection Utility
+MIT License - Developed by Jake Kitchen - Jake Kitchen - https://github.com/qqa112811 and Ken Nickerson - kenn@ibinary.com - https://github.com/kcnickerson - @kcnickerson - Sealed was privately funded by iBinary LLC. Follow Sealed on Twitter - https://twitter.com/sealedch
+The goal is to help protect original content creators from the growing incursions on their art (media), that could be proven manually, automatically or legally in any process the copyright holder may engage. 
+The expression of this goal, is "sealed" offering a simple process to protect original creator or copyright holder media, intially for images with video and text to follow in Sealed v2.0. 
+Sealed employs a novel use of a process to verify and document ownership, while providing an immediatly shareable asset. This process provides a proof-based model of ownership that is resistant to AI scrapping, GPT refactoring, decryption or other processes that may use or alter source images (e.g. outpainting) and deliberate theft of copyright.
+The code for sealed is open-source, under the MIT License to be included in as many applets, applications and services as possible with attribution and link to this repository.
+MIT License - Developed by Jake Kitchen - Jake Kitchen - https://github.com/qqa112811 and Ken Nickerson - kenn@ibinary.com - https://github.com/kcnickerson - @kcnickerson - Sealed was privately funded by iBinary LLC. Follow Sealed on Twitter - https://twitter.com/sealedch or Sealed - https://sealed.ch
 
-Jake Kitchen - https://github.com/qqa112811 - jake@sealed.ch - @?
-Ken Nickerson - https://github.com/kcnickerson - kenn@ibinary.com - @kcnickerson
-#
-The core idea is to invoke a process where media can be measured, cropped, shared like "edges" on paintings and standard CRCs on the process that can be secured personaly, or on a public share like IPFS - https://www.ipfs.com or blockchain or redis based, secured stores.
-#
-Process:
-1. Copyright Image uploaded to Sealed.ch OR direct use from the open-source library - https://github.com/ibinary/sealed integrated into custom solutions.
-2. Image is CRC to document original image hash.
-3. Image is randomly cropped from 3-11 pixels.
-4. Post crop image is CRC.
-5. Post crop edge (3) is CRC.
-6. .ZIP file produced with: original image, cropped image, edges and CRC .TXT / .JSON.
-7. Post crop original image is available for distribution.
-8. Possible option to inculde a QR Code (7) to reference contact, URL and other information as an option for sharing.
-#
-Post Process:
-a. If a post-process, shared copyright image is repurposed, the original copyright owner has a documented file (1...8) to confirm ownership of original copyright material.
-Post Release 1.0
-b. Expansion of process is possible with secure store or public share (e.g. IPFS) of post process media.
-c. Expansion of secure store to a distributed blockchain like store for immediate image compare, registration, certification.
-#
-Longer Term:
-z. Legal precident to verify the efficasy of the process by a copyright holder.
-#
-We hope others can leverage this process, code into their products, services and applications to ensure protection for the creative set, who are appreciated for their work, but often not respected in terms of attribution or compensation.
-#
-If you have any suggestions, enhancements, updates, forks, all are warmly welcomed. Good luck!
+Sealed is an open-source utility, employing a novel process to protect original creator or copyright holder media. Initially built for IMAGE(S), Sealed v2.0 will follow a similar process to include AUDIO(S), VIDEO(S) and TEXT(S).
+
+Sealed employs a novel process to verify and document ownership, while providing an immediatly shareable asset. The Sealed process provides a proof-based model of ownership that is resistant to AI scrapping, GPT refactoring, decryption or other methods that may use or alter original source media (e.g. outpainting) or deliberate forgery and theft.
+The code for sealed is open-source, under the MIT License to be included in as many applets, applications and services as possible with direct attribution and link to this repository or Sealed - https://sealed.ch
+# Process:
+Sealed invokes a process where media can be measured, cropped, shared, much like "edges" on paintings used for anti-forgery and insurance process. Standard hash-codes are generated to text and .json files to be secured personally, or on a public share like IPFS - https://www.ipfs.com or blockchain or redis or any preferred secured store.
+
+1. Copyright IMAGE(S) are uploaded to Sealed.ch OR local terminal application OR self-directed use of the open-source code - https://github.com/ibinary/sealed integrated for custom solutions. VIDEO(S) and TEXT(S) will be part of Sealed 2.0.
+2. IMAGE(S) is HASHED to document or fingerprint the original.
+3. IMAGE(S) is randomly cropped from 3 to 11 pixels depending on IMAGE(S) size, producing a separate file of frames or "edges."
+4. Post crop IMAGE(S) (3) are HASHED.
+5. Post crop EDGE(S) (3) are HASHED.
+6. .ZIP file is produced with: original IMAGE(S), cropped IMAGE(S), edges IMAGE(S) and HASH in .TXT and .JSON formats.
+7. Post crop original "share" IMAGE(S) are available for immediate distribution.
+8. Option to include QR Code (7) to reference contact, URL, and other information for sharing.
+# Post Process:
+1. If a post-process, shared copyright IMAGE(S) is repurposed, the original copyright owner has a documented file (1…8) to confirm ownership of original copyright material in absolute terms.
+2. Post-process .ZIP contains .txt and .json files that can be stored locally, or imported into a database archive or monitoring tool.
+# Post Release 1.0:
+1. Expansion of process is possible with secure store or public share (e.g., IPFS) of post process media.
+2. Expansion of secure store to a distributed blockchain like store for immediate image compare, registration, certification.
+3. Expansion of media types to AUDIO(S), VIDEO(S) and TEXT(S) in Sealed v2.0.
+4. Legal precedent to verify the efficacy of Sealed by a copyright holder.
+# History:
+The idea for sealed was prompted by a chance conversation at Musée d'Orsay - https://www.musee-orsay.fr/en in 2010. I asked about the insurance process for paintings in the gallery, and learned about scanning or photographing "edges" as a prime defense against forgery. As the content industry has changed with the move from analog to digital (no (print) negatives) and more recently scrapped for use in corpus for AI used in GPT, a need has grown to have a simple, secure, open-source method to secure copyright.
+"The Son of Man" (French: Le fils de l'homme) - https://en.wikipedia.org/wiki/The_Son_of_Man - is a 1964 painting by the Belgian surrealist painter René Magritte was chosen for Sealed.ch homepage, as a reflection of the use of this process in the popular 1999 movie "The Thomas Crown Affair" - https://en.wikipedia.org/wiki/The_Thomas_Crown_Affair_(1999_film).
+# Contact:
+We hope others can leverage this process, code into their products, services and applications to ensure protection for creators (copyright holders), who are appreciated for their work, but often not respected in terms of attribution or compensation. If you have any suggestions, enhancements, updates, forks, all are warmly welcomed at sealed-ch@pm.me - Good luck!
