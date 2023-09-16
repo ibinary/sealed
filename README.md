@@ -17,6 +17,10 @@ Sealed invokes a process where media can be measured, cropped, shared, much like
 6. .ZIP file is produced with: original IMAGE(S), cropped IMAGE(S), edges IMAGE(S) and HASH in .TXT and .JSON formats.
 7. Post crop original "share" IMAGE(S) are available for immediate distribution.
 8. Option to include QR Code (7) to reference contact, URL, and other information for sharing.
+
+![sealed-process](https://github.com/ibinary/sealed/assets/86942/c543eaf1-df50-4908-8843-8ce0fc2679e8)
+
+
 # Post Process:
 1. If a post-process, shared copyright IMAGE(S) is repurposed, the original copyright owner has a documented file (1…8) to confirm ownership of original copyright material in absolute terms.
 2. Post-process .ZIP contains .txt and .json files that can be stored locally, or imported into a database archive or monitoring tool.
