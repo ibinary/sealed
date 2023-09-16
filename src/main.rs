@@ -17,8 +17,6 @@ use fnv::FnvHasher;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
-
-const PART_SIZE: u32 = 20;
 const HASH_SIZE: u32 = 32;
 
 fn image_hash(img: &DynamicImage) -> u64 {
@@ -77,12 +75,14 @@ fn generate_uuid() -> String {
 }
 
 fn process_image(image_file: &str) {
+        let mut rng = rand::thread_rng();
+    let PART_SIZE: u32 = rng.gen_range(3..11);
     let img = image::open(image_file).unwrap();
     let (width, height) = img.dimensions();
     let img_gray = img.to_luma8();
 
     let file_name = Path::new(image_file).file_name().unwrap().to_str().unwrap();
-    let upload_dir = format!("uploads/{}-{}", file_name, generate_uuid());
+    let upload_dir = format!("sealed/{}-{}", file_name, generate_uuid());
     std::fs::create_dir_all(&upload_dir).unwrap();
     let original_path = format!("{}/original.png", upload_dir);
     img.save(&original_path).unwrap();
@@ -96,19 +96,19 @@ fn process_image(image_file: &str) {
 
     let mut parts_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
     image::imageops::replace(&mut parts_img, &top_part, 0, 0);
-    image::imageops::replace(&mut parts_img, &bottom_part, 0, height - 20);
-    image::imageops::replace(&mut parts_img, &left_part, 0, 20);
-    image::imageops::replace(&mut parts_img, &right_part, width - 20, 20);
+    image::imageops::replace(&mut parts_img, &bottom_part, 0, height - PART_SIZE);
+    image::imageops::replace(&mut parts_img, &left_part, 0, PART_SIZE);
+    image::imageops::replace(&mut parts_img, &right_part, width - PART_SIZE, PART_SIZE);
 
     let parts_path = format!("{}/frame.png", upload_dir);
     parts_img.save_with_format(&parts_path, ImageFormat::Png).unwrap();
 
     let mut recombined_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
     image::imageops::replace(&mut recombined_img, &top_part, 0, 0);
-    image::imageops::replace(&mut recombined_img, &bottom_part, 0, height - 20);
-    image::imageops::replace(&mut recombined_img, &left_part, 0, 20);
-    image::imageops::replace(&mut recombined_img, &right_part, width - 20, 20);
-    image::imageops::replace(&mut recombined_img, &middle_part, 20, 20);
+    image::imageops::replace(&mut recombined_img, &bottom_part, 0, height - PART_SIZE);
+    image::imageops::replace(&mut recombined_img, &left_part, 0, PART_SIZE);
+    image::imageops::replace(&mut recombined_img, &right_part, width - PART_SIZE, PART_SIZE);
+    image::imageops::replace(&mut recombined_img, &middle_part, PART_SIZE, PART_SIZE);
 
     let recombined_path = format!("{}/recombined.png", upload_dir);
     recombined_img.save_with_format(&recombined_path, ImageFormat::Png).unwrap();
@@ -240,15 +240,38 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        println!("Please provide a file or directory as an argument");
+        println!("Please provide a file or directory as an argument or -h for Help.");
         return;
+    }
+
+    match args[1].as_str() {
+        "-v" => {
+            println!("SealedCh - Simple Media Ownership, Copyright and License Protection Utility 1.3");
+            println!("Copyright © 2023 iBinary LLC = License MIT – <https://spdx.org/licenses/MIT.html>.");
+            println!("This is free software, there is no warranty: you are free to change and redistribute it with attribution.");
+            println!("Written by Jake Kitchen and Ken Nickerson. More information at: https://sealed.ch");
+            return;
+        },
+        "-h" => {
+            println!("SealedCh - Simple Media Ownership, Copyright and License Protection Utility 1.3");
+            println!("Copyright © 2023 iBinary LLC = License MIT – <https://spdx.org/licenses/MIT.html> - https://sealed.ch");
+            println!("This is free software, there is no warranty: you are free to change and redistribute it with attribution.");
+            println!("Usage: sealed [OPTION]… [FILE]… \n");
+            println!("Generate shareable media file(s) (the current directory by default) resulting in compressed files with the framed media, frames, and hash codes in text for protection of source media.");
+            println!("Mandatory arguments: <file name> or <directory name>");
+            println!("Optional arguments: -v for VERSION and/or -h for HELP");
+            return;
+        },
+        _ => {}
     }
 
     let path = &args[1];
 
     if Path::new(path).is_dir() {
         process_directory(path);
-    } else {
+    } else if Path::new(path).exists() {
         process_image(path);
+    } else {
+        println!("Invalid argument. Please provide a valid file, directory or -h for Help.");
     }
 }
