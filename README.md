@@ -1,6 +1,5 @@
 # Sealed
-Simple Media Ownership, Copyright, and License Protection Utility MIT License 
-Jake Kitchen - https://github.com/qqa112811 and Ken Nickerson - kenn@ibinary.com
+Simple Media Ownership, Copyright, and License Protection Utility - MIT License
 
 Sealed is an open-source utility that employs a novel process to protect original creator or copyright holder media. Initially built for IMAGE(S), Sealed v2.0 follows other novel processes to include AUDIO(S), VIDEO(S) and TEXT(S). The goal is to help protect original content creators and copyright holders from the growing incursions on their art, that may be proven manually, automatically, or legally in any process the copyright holder may engage in. Sealed is open-source and offers no accountability or liability for your use of this code or service.
 
@@ -34,4 +33,5 @@ The idea for sealed was prompted by a chance conversation at Musée d'Orsay - ht
 # Contact:
 We hope others can leverage this process, code into their products, services and applications to ensure protection for creators and copyright holders, who are appreciated for their work, but often not respected in terms of attribution or compensation. If you have any suggestions, enhancements, updates, forks, all are warmly welcomed at sealed-ch@pm.me
 #
+Jake Kitchen - jakekitchen@proton.me / Ken Nickerson - kenn@ibinary.com
 Sealed was privately funded by iBinary LLC. Follow Sealed on Twitter: https://twitter.com/sealedch
