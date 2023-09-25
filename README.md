@@ -16,8 +16,7 @@ Sealed invokes a process where media can be measured, cropped, shared, much like
 7. Post crop original "share" IMAGE(S) are available for immediate distribution.
 8. Option to include QR Code (7) to reference contact, URL, and other information for sharing.
 
-![sealed-process](https://github.com/ibinary/sealed/assets/86942/c543eaf1-df50-4908-8843-8ce0fc2679e8)
-
+![sealed-process](https://github.com/ibinary/sealed/assets/86942/868fc0a0-7617-4e36-8e77-2234c8e044da)
 
 # Post Process:
 1. If a post-process, shared copyright IMAGE(S) is repurposed, the original copyright owner has a documented file (1…8) to confirm ownership of original copyright material in absolute terms.
