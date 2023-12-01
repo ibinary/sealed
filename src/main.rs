@@ -1,22 +1,29 @@
 #![feature(proc_macro_hygiene, decl_macro)]
-#![allow(non_snake_case)]
 
-extern crate rocket;
 extern crate image;
 
-use serde_json::to_writer_pretty;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::fs::read_dir;
+use std::process::Command;
 use rand::Rng;
+use std::io;
+use rand::thread_rng;
+use image::GenericImage;
+use image::io::Reader as ImageReader;
 use std::time::{SystemTime, UNIX_EPOCH};
 use image::{GenericImageView, ImageFormat, Rgba};
 use serde_json::json;
 use image::{imageops::FilterType, GrayImage, ImageBuffer, DynamicImage};
 use std::fs::File;
 use std::io::Write;
+use rand::seq::SliceRandom;
 use std::hash::{Hash, Hasher};
 use fnv::FnvHasher;
 use std::fs;
 use std::path::{Path};
 use std::env;
+
+const PART_SIZE: u32 = 20;
 const HASH_SIZE: u32 = 32;
 
 fn image_hash(img: &DynamicImage) -> u64 {
@@ -34,14 +41,11 @@ fn image_hash(img: &DynamicImage) -> u64 {
 
 fn ahash(img: &GrayImage, hash_size: u32) -> u64 {
     let img = image::imageops::resize(img, hash_size, hash_size, FilterType::Nearest);
-    //println!("{:?}", img);  // print the resized image
     let mut ahash: u64 = 0;
-    let avg: u64 = img.pixels().map(|p| u64::from(p[0])).sum::<u64>() / ((hash_size * hash_size) as u64);
-    //println!("{}", avg);  // print the average pixel value
+    let avg: u64 = img.pixels().map(|p| p[0] as u64).sum::<u64>() / ((hash_size * hash_size) as u64);
     for (_i, pixel) in img.pixels().enumerate() {
-        //println!("{}", pixel[0]);  // print each pixel value
         ahash <<= 1;
-        if u64::from(pixel[0]) >= avg {
+        if pixel[0] as u64 >= avg {
             ahash |= 1;
         }
     }
@@ -77,34 +81,84 @@ fn generate_uuid() -> String {
     format!("{:x}-{:x}", in_ms, random)
 }
 
-fn remove_whitespace(img: &DynamicImage) -> DynamicImage {
-    let img_gray = img.to_luma8();
-    let (width, height) = img_gray.dimensions();
+fn process_video(video_file: &str, frame_interval: u64, sample: Option<usize>) {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(ProgressStyle::default_spinner()
+        .tick_chars("/|\\- ")
+        .template("{spinner:.green} {wide_msg}"));
 
-    let mut min_x = width;
-    let mut min_y = height;
-    let mut max_x = 0;
-    let mut max_y = 0;
+    let video_path = Path::new(video_file);
+    let video_name = video_path.file_stem().unwrap().to_str().unwrap();
+    let output_dir = format!("sealed/{}-{}", video_name, generate_uuid());
+    std::fs::create_dir_all(&output_dir).unwrap();
 
-    for y in 0..height {
-        for x in 0..width {
-            let pixel = img_gray.get_pixel(x, y).0[0];
-            if pixel < 255 {
-                min_x = min_x.min(x);
-                min_y = min_y.min(y);
-                max_x = max_x.max(x);
-                max_y = max_y.max(y);
+    // Extract frames from the video using ffmpeg
+    let output_frames = format!("{}/frame-%04d.png", output_dir);
+    let status = Command::new("ffmpeg")
+        .arg("-i")
+        .arg(video_file)
+        .arg("-vf")
+        .arg(format!("fps=1/{}", frame_interval)) // Extract 1 frame every 'frame_interval' seconds
+        .arg(output_frames)
+        .status()
+        .expect("Failed to execute ffmpeg command");
+
+    if !status.success() {
+        panic!("Failed to extract frames from video");
+    }
+
+    // XOR the frames to a single image
+    let mut xor_image: Option<DynamicImage> = None;
+    let frame_files: Vec<_> = read_dir(&output_dir)
+    .unwrap()
+    .map(|res| res.map(|e| e.path()))
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap();
+
+let frame_files = match sample {
+    Some(n) => {
+        let mut rng = thread_rng();
+        frame_files.choose_multiple(&mut rng, n).cloned().collect()
+    }
+    None => frame_files,
+};
+    for entry in frame_files {
+        pb.set_message("Processing frames...");
+        pb.tick();
+        let path = entry;
+        if path.extension().unwrap_or_default() == "png" {
+            let img = ImageReader::open(path).unwrap().decode().unwrap();
+            if let Some(ref mut xor_img) = xor_image {
+                let img_buffer = img.to_rgba8();
+                for (x, y, pixel) in img_buffer.enumerate_pixels() {
+                    let xor_pixel = xor_img.get_pixel(x, y);
+                    xor_img.put_pixel(x, y, Rgba([
+                        xor_pixel[0] ^ pixel[0],
+                        xor_pixel[1] ^ pixel[1],
+                        xor_pixel[2] ^ pixel[2],
+                        xor_pixel[3] ^ pixel[3],
+                    ]));
+                }
+            } else {
+                xor_image = Some(img);
             }
         }
     }
 
-    let cropped = img.clone().crop(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
-    cropped
+    // Save the XOR image
+    let xor_image_path = format!("{}/xor_image.png", output_dir);
+    let xor_image_unwrapped = xor_image.unwrap();
+    xor_image_unwrapped.save(&xor_image_path).unwrap();
+    
+
+    // Process the XOR image using the Sealed 1.0 process
+    process_image(&xor_image_path);
+    let processed_hash = image_hash(&xor_image_unwrapped);
+    println!("Processed video saved in directory: {}", output_dir);
+    println!("Processed hash: {}", processed_hash);
 }
 
 fn process_image(image_file: &str) {
-    let mut rng = rand::thread_rng();
-    let PART_SIZE: u32 = rng.gen_range(3..11);
     let img = image::open(image_file).unwrap();
     let (width, height) = img.dimensions();
     let img_gray = img.to_luma8();
@@ -124,43 +178,63 @@ fn process_image(image_file: &str) {
 
     let mut parts_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
     image::imageops::replace(&mut parts_img, &top_part, 0, 0);
-    image::imageops::replace(&mut parts_img, &bottom_part, 0, height - PART_SIZE);
-    image::imageops::replace(&mut parts_img, &left_part, 0, PART_SIZE);
-    image::imageops::replace(&mut parts_img, &right_part, width - PART_SIZE, PART_SIZE);
+    image::imageops::replace(&mut parts_img, &bottom_part, 0, height - 20);
+    image::imageops::replace(&mut parts_img, &left_part, 0, 20);
+    image::imageops::replace(&mut parts_img, &right_part, width - 20, 20);
 
     let parts_path = format!("{}/frame.png", upload_dir);
     parts_img.save_with_format(&parts_path, ImageFormat::Png).unwrap();
 
     let mut recombined_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
     image::imageops::replace(&mut recombined_img, &top_part, 0, 0);
-    image::imageops::replace(&mut recombined_img, &bottom_part, 0, height - PART_SIZE);
-    image::imageops::replace(&mut recombined_img, &left_part, 0, PART_SIZE);
-    image::imageops::replace(&mut recombined_img, &right_part, width - PART_SIZE, PART_SIZE);
-    image::imageops::replace(&mut recombined_img, &middle_part, PART_SIZE, PART_SIZE);
+    image::imageops::replace(&mut recombined_img, &bottom_part, 0, height - 20);
+    image::imageops::replace(&mut recombined_img, &left_part, 0, 20);
+    image::imageops::replace(&mut recombined_img, &right_part, width - 20, 20);
+    image::imageops::replace(&mut recombined_img, &middle_part, 20, 20);
 
     let recombined_path = format!("{}/recombined.png", upload_dir);
     recombined_img.save_with_format(&recombined_path, ImageFormat::Png).unwrap();
-    let middle_part_dynamic = DynamicImage::ImageRgba8(middle_part.clone());
-    let cropped_no_whitespace = remove_whitespace(&middle_part_dynamic);
-    let cropped_no_whitespace_path = format!("{}/share.jpg", upload_dir);
-    cropped_no_whitespace.save_with_format(&cropped_no_whitespace_path, ImageFormat::Jpeg).unwrap();
 
+    let mut middle_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+    let mut cropped_no_whitespace_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+    image::imageops::replace(&mut cropped_no_whitespace_img, &middle_part, 20, 20);
 
-    let cropped_no_whitespace_hash = image_hash(&cropped_no_whitespace);
+    for pixel in cropped_no_whitespace_img.pixels_mut() {
+        if pixel[0] == 255 && pixel[1] == 255 && pixel[2] == 255 {
+            *pixel = Rgba([0, 0, 0, 0]);
+        }
+    }
 
-    let parts_img_gray = DynamicImage::ImageRgba8(parts_img.clone()).to_luma8();
-    let recombined_img_gray = DynamicImage::ImageRgba8(recombined_img.clone()).to_luma8();
-    let middle_part_dynamic_gray = middle_part_dynamic.to_luma8();
-    
+    let cropped_no_whitespace_path = format!("{}/share.png", upload_dir);
+    cropped_no_whitespace_img.save_with_format(&cropped_no_whitespace_path, ImageFormat::Png).unwrap();
+
+    image::imageops::replace(&mut middle_img, &middle_part, 20, 20);
+    let cropped_path = format!("{}/cropped.png", upload_dir);
+    middle_img.save_with_format(&cropped_path, ImageFormat::Png).unwrap();
 
     let original_dhash = dhash(&img_gray, HASH_SIZE);
     let original_ahash = ahash(&img_gray, HASH_SIZE);
+
+    let parts_img_clone = parts_img.clone();
+    let parts_img_gray = DynamicImage::ImageRgba8(parts_img).to_luma8();
     let parts_dhash = dhash(&parts_img_gray, HASH_SIZE);
     let parts_ahash = ahash(&parts_img_gray, HASH_SIZE);
-    let cropped_dhash = dhash(&middle_part_dynamic_gray, HASH_SIZE);
-    let cropped_ahash = ahash(&middle_part_dynamic_gray, HASH_SIZE);
+
+    let middle_img_clone = middle_img.clone();
+    let middle_img_gray = DynamicImage::ImageRgba8(middle_img).to_luma8();
+    let middle_dhash = dhash(&middle_img_gray, HASH_SIZE);
+    let middle_ahash = ahash(&middle_img_gray, HASH_SIZE);
+
+    let recombined_img_clone = recombined_img.clone();
+    let recombined_img_gray = DynamicImage::ImageRgba8(recombined_img).to_luma8();
     let recombined_dhash = dhash(&recombined_img_gray, HASH_SIZE);
     let recombined_ahash = ahash(&recombined_img_gray, HASH_SIZE);
+
+    let original_hash = image_hash(&img);
+    let parts_hash = image_hash(&DynamicImage::ImageRgba8(parts_img_clone));
+    let cropped_hash = image_hash(&DynamicImage::ImageRgba8(middle_img_clone));
+    let recombined_hash = image_hash(&DynamicImage::ImageRgba8(recombined_img_clone));
+
     let response = json!({
         "originalImagePath": format!("{}/original.png", upload_dir),
         "originalDhash": format!("{:016x}", original_dhash),
@@ -168,44 +242,33 @@ fn process_image(image_file: &str) {
         "partsImagePath": format!("{}/frame.png", upload_dir),
         "partsDhash": format!("{:016x}", parts_dhash),
         "partsAhash": format!("{:016x}", parts_ahash),
-        "shareImagePath": format!("{}/share.jpg", upload_dir),
-        "originalImageHash": format!("{:016x}", image_hash(&img)),
-        "partsImageHash": format!("{:016x}", image_hash(&DynamicImage::ImageRgba8(parts_img))),
-        "shareImageHash": format!("{:016x}", cropped_no_whitespace_hash),
-        "recombinedImageHash": format!("{:016x}", image_hash(&DynamicImage::ImageRgba8(recombined_img))),
-        "shareImageDhash": format!("{:016x}", cropped_dhash),
-        "shareImageAhash": format!("{:016x}", cropped_ahash),
+        "croppedImagePath": format!("{}/cropped.png", upload_dir),
+        "originalImageHash": format!("{:016x}", original_hash),
+        "partsImageHash": format!("{:016x}", parts_hash),
+        "croppedImageHash": format!("{:016x}", cropped_hash),
+        "recombinedImageHash": format!("{:016x}", recombined_hash),
+        "croppedImageDhash": format!("{:016x}", middle_dhash),
+        "croppedImageAhash": format!("{:016x}", middle_ahash),
         "recombinedImagePath": format!("{}/recombined.png", upload_dir),
         "recombinedDhash": format!("{:016x}", recombined_dhash),
         "recombinedAhash": format!("{:016x}", recombined_ahash),
         "archiveURL": format!("{}", upload_dir),
     });
 
+    // Save the response JSON to a file
+    let mut file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
+    let response_json = serde_json::to_string_pretty(&response).unwrap();
+    let mut response_file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
+    response_file.write_all(response_json.as_bytes()).unwrap();
+
     let mut file = File::create(format!("{}/hashes.txt", upload_dir)).unwrap();
-    write!(file, "Archive URL: {}\n", response["archiveURL"]).unwrap();
-    write!(file, "Original Image Path: {}\n", response["originalImagePath"]).unwrap();
-    write!(file, "Original Image Hash: {}\n", response["originalImageHash"]).unwrap();
-    write!(file, "Original Image Dhash: {}\n", response["originalDhash"]).unwrap();
-    write!(file, "Original Image Ahash: {}\n", response["originalAhash"]).unwrap();
-    write!(file, "Frame Image Path: {}\n", response["partsImagePath"]).unwrap();
-    write!(file, "Frame Image Hash: {}\n", response["partsImageHash"]).unwrap();
-    write!(file, "Frame Image Dhash: {}\n", response["partsDhash"]).unwrap();
-    write!(file, "Frame Image Ahash: {}\n", response["partsAhash"]).unwrap();
-    write!(file, "Share Image Path: {}\n", response["shareImagePath"]).unwrap();
-    write!(file, "Share Image Hash: {}\n", response["shareImageHash"]).unwrap();
-    write!(file, "Share Image Dhash: {}\n", response["shareImageDhash"]).unwrap();
-    write!(file, "Share Image Ahash: {}\n", response["shareImageAhash"]).unwrap();
-    write!(file, "Recombined Image Path: {}\n", response["recombinedImagePath"]).unwrap();
-    write!(file, "Recombined Image Hash: {}\n", response["recombinedImageHash"]).unwrap();
-    write!(file, "Recombined Image Dhash: {}\n", response["recombinedDhash"]).unwrap();
-    write!(file, "Recombined Image Ahash: {}\n", response["recombinedAhash"]).unwrap();
+    writeln!(file, "Original image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", original_dhash, original_ahash, original_hash).ok();
+    writeln!(file, "Cropped image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", middle_dhash, middle_ahash, cropped_hash).ok();
+    writeln!(file, "Frame image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", parts_dhash, parts_ahash, parts_hash).ok();
+    writeln!(file, "Recombined image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", recombined_dhash, recombined_ahash, recombined_hash).ok();
 
-
-    let hashes_path = format!("{}/hashes.json", upload_dir);
-    let file = File::create(hashes_path).unwrap();
-    to_writer_pretty(file, &response).unwrap();
-
-    let path_str = format!("{}/sealed.zip", upload_dir);
+    let archive_name = format!("{}.zip", file_name);
+    let path_str = format!("{}/{}", upload_dir, archive_name);
     let path = Path::new(&path_str);
     let file = File::create(&path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
@@ -213,29 +276,26 @@ fn process_image(image_file: &str) {
         .compression_method(zip::CompressionMethod::Stored)
         .unix_permissions(0o755);
 
-    zip.start_file("share.jpg", options).unwrap();
-    let img_data = std::fs::read(&cropped_no_whitespace_path).unwrap();
+
+    zip.start_file("cropped.png", options).unwrap();
+    let img_data = std::fs::read(&cropped_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
     zip.start_file("original.png", options).unwrap();
-    let img_data = std::fs::read(&original_path).unwrap();
-    zip.write_all(&img_data).unwrap();
-
-    zip.start_file("recombined.png", options).unwrap();
-    let img_data = std::fs::read(&original_path).unwrap();
+    let img_data = std::fs::read(&cropped_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
     zip.start_file("frame.png", options).unwrap();
     let img_data = std::fs::read(&parts_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
-    zip.start_file("hashes.json", options).unwrap();
-    let json_data = std::fs::read(format!("{}/hashes.json", upload_dir)).unwrap();
-    zip.write_all(&json_data).unwrap();
-
     zip.start_file("hashes.txt", options).unwrap();
     let txt_data = std::fs::read(format!("{}/hashes.txt", upload_dir)).unwrap();
     zip.write_all(&txt_data).unwrap();
+
+    zip.start_file("hashes.json", options).unwrap();
+    let json_data = std::fs::read(format!("{}/hashes.json", upload_dir)).unwrap();
+    zip.write_all(&json_data).unwrap();
 
     zip.finish().unwrap();
 
@@ -247,6 +307,7 @@ fn process_directory(directory: &str) {
 
     for path in paths {
         let entry = path.unwrap();
+        let file_name = entry.file_name().into_string().unwrap();
         let file_path = entry.path();
         let extension = file_path.extension().unwrap_or_default();
         if extension == "png" || extension == "jpg" || extension == "jpeg" {
@@ -261,87 +322,29 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        println!("Please provide a file or directory as an argument or -h for help");
+        println!("Usage: {} <file_or_directory_path>", args[0]);
         return;
     }
 
-    match args[1].as_str() {
-        "-v" => {
-            println!("SealedCh - Simple Media Ownership, Copyright and License Protection Utility 1.2");
-            println!("Copyright © 2023 iBinary LLC = License MIT – <https://spdx.org/licenses/MIT.html>.");
-            println!("This is free software, there is no warranty: you are free to change and redistribute it with attribution.");
-            println!("Written by Jake Kitchen and Ken Nickerson. More information at: https://sealed.ch");
-            return;
-        },
-        "-h" => {
-            println!("SealedCh - Simple Media Ownership, Copyright and License Protection Utility 1.2");
-            println!("Copyright © 2023 iBinary LLC = License MIT – <https://spdx.org/licenses/MIT.html> - https://sealed.ch");
-            println!("This is free software, there is no warranty: you are free to change and redistribute it with attribution.\n");
-            println!("Usage: sealed-ch [OPTION]… [FILE]…");
-            println!("Generate shareable media file(s) (the current directory by default) resulting in compressed files with the framed media, frames, and hash codes in text for protection of source media.");
-            println!("Mandatory arguments: <file name> or <directory name>");
-            println!("Optional arguments: -v for VERSION and/or -h for HELP");
-            return;
-        },
-        _ => {}
-    }
+    let file_or_directory_path = &args[1];
 
-    let path = &args[1];
+    println!("Choose an option:");
+    println!("1. Process a video");
+    println!("2. Process a directory of images");
 
-    if Path::new(path).is_dir() {
-        process_directory(path);
-    } else if Path::new(path).exists() {
-        process_image(path);
-    }
-    else {
-        println!("Invalid argument. Please provide a valid file or directory as an argument or -h for help");
-    }
-}
+    let mut choice = String::new();
+    io::stdin().read_line(&mut choice).expect("Failed to read line");
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::{ImageBuffer, Luma};
-    use std::time::Instant;
-
-    #[test]
-    fn test_hash_speed() {
-        let img = ImageBuffer::from_fn(1000, 1000, |x, y| {
-            if (x % 2 == 0) && (y % 2 == 0) {
-                Luma([0u8])
-            } else {
-                Luma([255u8])
-            }
-        });
-        let img = DynamicImage::ImageLuma8(img);
-
-        let start = Instant::now();
-        let _ = image_hash(&img);
-        println!("image_hash: {:?}", start.elapsed());
-
-        let start = Instant::now();
-        let _ = ahash(&img.to_luma8(), 8);  // assuming hash_size is 8
-        println!("ahash: {:?}", start.elapsed());
-
-        let start = Instant::now();
-        let _ = dhash(&img.to_luma8(), 8);  // assuming hash_size is 8
-        println!("dhash: {:?}", start.elapsed());
-    }
-
-    #[test]
-    fn test_hash_functions() {
-        let img = ImageBuffer::from_fn(10, 10, |_x, _y| Luma([0u8]));
-        let img = DynamicImage::ImageLuma8(img);
-    
-        assert_ne!(image_hash(&img), 0, "image_hash failed on black image");
-        assert_eq!(ahash(&img.to_luma8(), 8), 0xFFFFFFFFFFFFFFFF, "ahash failed on black image");
-        assert_eq!(dhash(&img.to_luma8(), 8), 0, "dhash failed on black image");
-    
-        let img = ImageBuffer::from_fn(10, 10, |_x, _y| Luma([255u8]));
-        let img = DynamicImage::ImageLuma8(img);
-    
-        assert_ne!(image_hash(&img), 0, "image_hash failed on white image");
-        assert_eq!(ahash(&img.to_luma8(), 8), 0xFFFFFFFFFFFFFFFF, "ahash failed on white image");
-        assert_eq!(dhash(&img.to_luma8(), 8), 0, "dhash failed on white image");
+    match choice.trim() {
+        "1" => {
+            let frame_interval = 1; // Set the default frame interval for video processing
+            process_video(file_or_directory_path, frame_interval, None);
+        }
+        "2" => {
+            process_image(file_or_directory_path);
+        }
+        _ => {
+            println!("Invalid choice");
+        }
     }
 }
