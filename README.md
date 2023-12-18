@@ -21,7 +21,7 @@ Sealed invokes a process where media can be measured, cropped, shared, much like
 ![sealed-process](https://github.com/ibinary/sealed/assets/86942/868fc0a0-7617-4e36-8e77-2234c8e044da)
 
 # Post Process:
-1. If a post-process, shared copyright IMAGE(S),VIDEO(S) or TEXT(S) is repurposed, the original copyright owner has a documented file (1…8+) to confirm ownership of original copyright material in absolute terms.
+1. If a post-process, shared copyright IMAGE(S), VIDEO(S) or TEXT(S) is repurposed, the original copyright owner has a documented file (1…8+) to confirm ownership of original copyright material in absolute terms.
 2. Post-process .ZIP contains .txt and .json files that can be stored locally, or imported into a database archive or monitoring tool.
 # Post Release 3.x:
 1. Expansion of process is possible with secure store or public share (e.g., IPFS) of post process media.
