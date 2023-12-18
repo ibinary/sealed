@@ -7,7 +7,7 @@ The process provides a proof-based model of ownership that is resistant to AI sc
 # Process:
 Sealed invokes a process where media can be measured, cropped, shared, much like "edges" on paintings used for anti-forgery and insurance process. Standard hash-codes are generated to text and .json files to be secured personally, or on a service like IPFS or blockchain or redis or any preferred secured store.
 
-1. Copyright IMAGE(S),VIDEO(S) or TEXT(S) are uploaded to Sealed.ch OR local terminal application OR self-directed use of the open-source code - https://github.com/ibinary/sealed integrated for custom solutions. AUDIO(S) will be part of Sealed 3.x.
+1. Copyright IMAGE(S), VIDEO(S) or TEXT(S) are uploaded to Sealed.ch OR local terminal application OR self-directed use of the open-source code - https://github.com/ibinary/sealed integrated for custom solutions. AUDIO(S) will be part of Sealed 3.x.
 2. IMAGE(S) is HASHED to document or fingerprint the original.
 3. IMAGE(S) is randomly cropped from 3 to 11 pixels depending on IMAGE(S) size, producing a separate file of frames or "edges."
 4. Post crop IMAGE(S) (3) are HASHED.
