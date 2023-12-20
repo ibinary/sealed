@@ -22,9 +22,57 @@ use fnv::FnvHasher;
 use std::fs;
 use std::path::{Path};
 use std::env;
-
 const PART_SIZE: u32 = 20;
 const HASH_SIZE: u32 = 32;
+
+fn remove_black_margin(mut img: DynamicImage) -> DynamicImage {
+    let (width, height) = img.dimensions();
+    let mut top = 0;
+    let mut bottom = height;
+    let mut left = 0;
+    let mut right = width;
+
+    'outer: for y in 0..height {
+        for x in 0..width {
+            let pixel = img.get_pixel(x, y);
+            if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+                top = y;
+                break 'outer;
+            }
+        }
+    }
+
+    'outer: for y in (0..height).rev() {
+        for x in 0..width {
+            let pixel = img.get_pixel(x, y);
+            if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+                bottom = y;
+                break 'outer;
+            }
+        }
+    }
+
+    'outer: for x in 0..width {
+        for y in 0..height {
+            let pixel = img.get_pixel(x, y);
+            if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+                left = x;
+                break 'outer;
+            }
+        }
+    }
+
+    'outer: for x in (0..width).rev() {
+        for y in 0..height {
+            let pixel = img.get_pixel(x, y);
+            if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+                right = x;
+                break 'outer;
+            }
+        }
+    }
+    img.crop(left, top, right - left, bottom - top)
+}
 
 fn image_hash(img: &DynamicImage) -> u64 {
     let mut hasher = FnvHasher::default();
@@ -81,7 +129,78 @@ fn generate_uuid() -> String {
     format!("{:x}-{:x}", in_ms, random)
 }
 
+fn process_pdf(pdf_file: &str) {
+    let mut path = env::var("PATH").unwrap();
+    path.push_str(";./libs");
+    env::set_var("PATH", &path);
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(ProgressStyle::default_spinner()
+        .tick_chars("/|\\- ")
+        .template("{spinner:.green} {wide_msg}"));
+
+    let pdf_path = Path::new(pdf_file);
+    let pdf_name = pdf_path.file_stem().unwrap().to_str().unwrap();
+    let output_dir = format!("sealed/{}-{}", pdf_name, generate_uuid());
+    std::fs::create_dir_all(&output_dir).unwrap();
+    let status = Command::new("pdftoppm")
+        .arg("-png")
+        .arg(pdf_file)
+        .arg(format!("{}/page", output_dir))
+                        .status()
+        .expect("Failed to execute command");
+
+    if !status.success() {
+        panic!("Failed to convert PDF to images");
+    }
+
+    let page_files: Vec<_> = read_dir(&output_dir)
+        .unwrap()
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    // XOR the pages to a single image
+    let mut xor_image: Option<DynamicImage> = None;
+    for path in page_files {
+        pb.set_message("Processing pages...");
+        pb.tick();
+        let img = ImageReader::open(&path).unwrap().decode().unwrap();
+        if let Some(ref mut xor_img) = xor_image {
+            let img_buffer = img.to_rgba8();
+            for (x, y, pixel) in img_buffer.enumerate_pixels() {
+                let xor_pixel = xor_img.get_pixel(x, y);
+                xor_img.put_pixel(x, y, Rgba([
+                    xor_pixel[0] ^ pixel[0],
+                    xor_pixel[1] ^ pixel[1],
+                    xor_pixel[2] ^ pixel[2],
+                    xor_pixel[3] ^ pixel[3],
+                ]));
+            }
+        } else {
+            xor_image = Some(img);
+        }
+    }
+
+    // Save the XOR image
+    let xor_image_path = format!("{}/xor_image.png", output_dir);
+    let xor_image_unwrapped = xor_image.unwrap();
+    
+    // Remove black margin from the XOR image
+    let xor_image_unwrapped = remove_black_margin(xor_image_unwrapped);
+    
+    xor_image_unwrapped.save(&xor_image_path).unwrap();
+
+    // Process the XOR image using the Sealed 1.0 process
+    process_image(&xor_image_path);
+    let processed_hash = image_hash(&xor_image_unwrapped);
+    println!("Processed PDF saved in directory: {}", output_dir);
+    println!("Processed hash: {}", processed_hash);
+}
+
 fn process_video(video_file: &str, frame_interval: u64, sample: Option<usize>) {
+    let mut path = env::var("PATH").unwrap();
+    path.push_str(";./libs");
+    env::set_var("PATH", &path);
     let pb = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner()
         .tick_chars("/|\\- ")
@@ -115,13 +234,14 @@ fn process_video(video_file: &str, frame_interval: u64, sample: Option<usize>) {
     .collect::<Result<Vec<_>, _>>()
     .unwrap();
 
-let frame_files = match sample {
-    Some(n) => {
-        let mut rng = thread_rng();
-        frame_files.choose_multiple(&mut rng, n).cloned().collect()
-    }
-    None => frame_files,
-};
+    let frame_files = match sample {
+        Some(n) => {
+            let mut rng = thread_rng();
+            frame_files.choose_multiple(&mut rng, n).cloned().collect()
+        }
+        None => frame_files,
+    };
+
     for entry in frame_files {
         pb.set_message("Processing frames...");
         pb.tick();
@@ -187,10 +307,10 @@ fn process_image(image_file: &str) {
 
     let mut recombined_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
     image::imageops::replace(&mut recombined_img, &top_part, 0, 0);
-    image::imageops::replace(&mut recombined_img, &bottom_part, 0, height - 20);
-    image::imageops::replace(&mut recombined_img, &left_part, 0, 20);
-    image::imageops::replace(&mut recombined_img, &right_part, width - 20, 20);
-    image::imageops::replace(&mut recombined_img, &middle_part, 20, 20);
+    image::imageops::replace(&mut recombined_img, &bottom_part, 0, height - PART_SIZE);
+    image::imageops::replace(&mut recombined_img, &left_part, 0, PART_SIZE);
+    image::imageops::replace(&mut recombined_img, &right_part, width - PART_SIZE, PART_SIZE);
+    image::imageops::replace(&mut recombined_img, &middle_part, PART_SIZE, PART_SIZE);
 
     let recombined_path = format!("{}/recombined.png", upload_dir);
     recombined_img.save_with_format(&recombined_path, ImageFormat::Png).unwrap();
@@ -256,7 +376,7 @@ fn process_image(image_file: &str) {
     });
 
     // Save the response JSON to a file
-    let mut file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
+    let _file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
     let response_json = serde_json::to_string_pretty(&response).unwrap();
     let mut response_file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
     response_file.write_all(response_json.as_bytes()).unwrap();
@@ -307,7 +427,7 @@ fn process_directory(directory: &str) {
 
     for path in paths {
         let entry = path.unwrap();
-        let file_name = entry.file_name().into_string().unwrap();
+        let _file_name = entry.file_name().into_string().unwrap();
         let file_path = entry.path();
         let extension = file_path.extension().unwrap_or_default();
         if extension == "png" || extension == "jpg" || extension == "jpeg" {
@@ -330,7 +450,9 @@ fn main() {
 
     println!("Choose an option:");
     println!("1. Process a video");
-    println!("2. Process a directory of images");
+    println!("2. Process a single image");
+    println!("3. Process a directory of images");
+    println!("4. Process a PDF file");
 
     let mut choice = String::new();
     io::stdin().read_line(&mut choice).expect("Failed to read line");
@@ -342,6 +464,12 @@ fn main() {
         }
         "2" => {
             process_image(file_or_directory_path);
+        }
+        "3" => {
+            process_directory(file_or_directory_path);
+        }
+        "4" => {
+            process_pdf(file_or_directory_path);
         }
         _ => {
             println!("Invalid choice");
