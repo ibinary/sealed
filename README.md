@@ -28,12 +28,13 @@ Sealed invokes a process where media can be measured, cropped, shared, much like
 2. Expansion of secure store to a distributed blockchain like store for immediate image compare, registration, certification.
 3. Expansion of media types to AUDIO(S) in Sealed 3.x.
 4. Legal precedent to verify the efficacy of Sealed by a copyright holder.
-# Dependencies
+# Dependencies:
 Linux: Install these tools on most Linux distributions using the package manager.
 
    Ubuntu and other Debian-based distributions, use apt:
       sudo apt update
       sudo apt install ffmpeg poppler-utils
+      
    Fedora, CentOS, or other Red Hat-based distributions, use dnf or yum:
       sudo dnf install ffmpeg poppler-utils
 
