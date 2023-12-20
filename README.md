@@ -45,6 +45,7 @@ Then, install ffmpeg and poppler with these commands:
    brew install poppler
 # History:
 The idea for sealed was prompted by a chance conversation at Musée d'Orsay - https://www.musee-orsay.fr/en in 2010. I asked about the insurance process for paintings in the gallery, and learned about scanning or photographing "edges" as a prime defense against forgery. As the content industry has changed with the move from analog to digital (no (print) negatives) and more recently scrapped for use in corpus for AI used in GPT, a need has grown to have a simple, secure, open-source method to secure copyright.
+
 "The Son of Man" (French: Le fils de l'homme) - https://en.wikipedia.org/wiki/The_Son_of_Man - is a 1964 painting by the Belgian surrealist painter René Magritte was chosen for Sealed.ch homepage, as a reflection of the use of this process in the popular 1999 movie "The Thomas Crown Affair" - https://en.wikipedia.org/wiki/The_Thomas_Crown_Affair_(1999_film).
 # Contact:
 We hope others can leverage this process, code into their products, services and applications to ensure protection for creators and copyright holders, who are appreciated for their work, but often not respected in terms of attribution or compensation. If you have any suggestions, enhancements, updates, forks, all are warmly welcomed at sealed-ch@pm.me
