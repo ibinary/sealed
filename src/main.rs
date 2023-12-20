@@ -130,9 +130,6 @@ fn generate_uuid() -> String {
 }
 
 fn process_pdf(pdf_file: &str) {
-    let mut path = env::var("PATH").unwrap();
-    path.push_str(";./libs");
-    env::set_var("PATH", &path);
     let pb = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner()
         .tick_chars("/|\\- ")
@@ -198,9 +195,6 @@ fn process_pdf(pdf_file: &str) {
 }
 
 fn process_video(video_file: &str, frame_interval: u64, sample: Option<usize>) {
-    let mut path = env::var("PATH").unwrap();
-    path.push_str(";./libs");
-    env::set_var("PATH", &path);
     let pb = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner()
         .tick_chars("/|\\- ")
