@@ -29,14 +29,12 @@ Sealed invokes a process where media can be measured, cropped, shared, much like
 3. Expansion of media types to AUDIO(S) in Sealed 3.x.
 4. Legal precedent to verify the efficacy of Sealed by a copyright holder.
 # Dependencies
-Linux: Install these tools on most Linux distributions using the package manager. 
-
-For Ubuntu and other Debian-based distributions, use apt:
-   sudo apt update
-   sudo apt install ffmpeg poppler-utils
-
-For Fedora, CentOS, or other Red Hat-based distributions, use dnf or yum:
-   sudo dnf install ffmpeg poppler-utils
+Linux: Install these tools on most Linux distributions using the package manager.
+   Ubuntu and other Debian-based distributions, use apt:
+      sudo apt update
+      sudo apt install ffmpeg poppler-utils
+   Fedora, CentOS, or other Red Hat-based distributions, use dnf or yum:
+      sudo dnf install ffmpeg poppler-utils
 
 macOS: Use Homebrew package manager to install these tools. Install Homebrew: 
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
