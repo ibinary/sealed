@@ -1,5 +1,3 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
 extern crate image;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -11,7 +9,7 @@ use rand::thread_rng;
 use image::GenericImage;
 use image::io::Reader as ImageReader;
 use std::time::{SystemTime, UNIX_EPOCH};
-use image::{GenericImageView, ImageFormat, Rgba};
+use image::{GenericImageView, ImageFormat, Rgba, RgbaImage};
 use serde_json::json;
 use image::{imageops::FilterType, GrayImage, ImageBuffer, DynamicImage};
 use std::fs::File;
@@ -25,7 +23,7 @@ use std::env;
 const PART_SIZE: u32 = 20;
 const HASH_SIZE: u32 = 32;
 
-fn remove_black_margin(mut img: DynamicImage) -> DynamicImage {
+fn crop_towards_center(img: &mut DynamicImage) -> DynamicImage {
     let (width, height) = img.dimensions();
     let mut top = 0;
     let mut bottom = height;
@@ -35,7 +33,7 @@ fn remove_black_margin(mut img: DynamicImage) -> DynamicImage {
     'outer: for y in 0..height {
         for x in 0..width {
             let pixel = img.get_pixel(x, y);
-            if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+            if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
                 top = y;
                 break 'outer;
             }
@@ -45,7 +43,7 @@ fn remove_black_margin(mut img: DynamicImage) -> DynamicImage {
     'outer: for y in (0..height).rev() {
         for x in 0..width {
             let pixel = img.get_pixel(x, y);
-            if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+            if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
                 bottom = y;
                 break 'outer;
             }
@@ -55,7 +53,7 @@ fn remove_black_margin(mut img: DynamicImage) -> DynamicImage {
     'outer: for x in 0..width {
         for y in 0..height {
             let pixel = img.get_pixel(x, y);
-            if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+            if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
                 left = x;
                 break 'outer;
             }
@@ -65,13 +63,22 @@ fn remove_black_margin(mut img: DynamicImage) -> DynamicImage {
     'outer: for x in (0..width).rev() {
         for y in 0..height {
             let pixel = img.get_pixel(x, y);
-            if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0 {
+            if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
                 right = x;
                 break 'outer;
             }
         }
     }
-    img.crop(left, top, right - left, bottom - top)
+
+    // Crop 8-10px in from the found edges
+    let mut rng = rand::thread_rng();
+    let crop_margin = rng.gen_range(10..21);
+    img.crop(
+        (left + crop_margin).min(width),
+        (top + crop_margin).min(height),
+        (right - left).saturating_sub(2 * crop_margin),
+        (bottom - top).saturating_sub(2 * crop_margin)
+    )
 }
 
 fn image_hash(img: &DynamicImage) -> u64 {
@@ -129,7 +136,41 @@ fn generate_uuid() -> String {
     format!("{:x}-{:x}", in_ms, random)
 }
 
+
+fn xor_random_pixels(img: &mut DynamicImage, percentage: f32) {
+    let (width, height) = img.dimensions();
+    let num_pixels_to_xor = ((width as f32) * (height as f32) * percentage).round() as u32;
+    let mut rng = thread_rng();
+
+    // Create an RGBA image to work with
+    let mut rgba_img = img.to_rgba8();
+
+    for _ in 0..num_pixels_to_xor {
+        let x = rng.gen_range(0..width);
+        let y = rng.gen_range(0..height);
+
+        let mut current_pixel = rgba_img.get_pixel_mut(x, y);
+
+        // Check if the pixel is black
+        if current_pixel[0] == 0 && current_pixel[1] == 0 && current_pixel[2] == 0 {
+            // Apply the XOR operation to black pixels
+            let random_value = rng.gen::<u8>();
+            let random_value = if random_value == 0 { 1 } else { random_value };
+            current_pixel[0] ^= random_value;
+            current_pixel[1] ^= random_value;
+            current_pixel[2] ^= random_value;
+            current_pixel[3] = 0; // Set alpha to 0 to make black XOR'd pixels transparent
+        }
+    }
+
+    // Update the input image with the modified RGBA image
+    *img = DynamicImage::ImageRgba8(rgba_img);
+}
 fn process_pdf(pdf_file: &str) {
+    let mut path = env::var("PATH").unwrap();
+    path.push_str(";./libs");
+    env::set_var("PATH", &path);
+
     let pb = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner()
         .tick_chars("/|\\- ")
@@ -138,17 +179,20 @@ fn process_pdf(pdf_file: &str) {
     let pdf_path = Path::new(pdf_file);
     let pdf_name = pdf_path.file_stem().unwrap().to_str().unwrap();
     let output_dir = format!("sealed/{}-{}", pdf_name, generate_uuid());
-    std::fs::create_dir_all(&output_dir).unwrap();
-    let status = Command::new("pdftoppm")
-        .arg("-png")
+    fs::create_dir_all(&output_dir).unwrap();
+
+    let status = Command::new("pdftopng")
         .arg(pdf_file)
         .arg(format!("{}/page", output_dir))
-                        .status()
+        .status()
         .expect("Failed to execute command");
 
     if !status.success() {
         panic!("Failed to convert PDF to images");
     }
+
+    pb.set_message("Processing pages...");
+    pb.tick();
 
     let page_files: Vec<_> = read_dir(&output_dir)
         .unwrap()
@@ -156,45 +200,35 @@ fn process_pdf(pdf_file: &str) {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-    // XOR the pages to a single image
-    let mut xor_image: Option<DynamicImage> = None;
-    for path in page_files {
-        pb.set_message("Processing pages...");
-        pb.tick();
-        let img = ImageReader::open(&path).unwrap().decode().unwrap();
-        if let Some(ref mut xor_img) = xor_image {
-            let img_buffer = img.to_rgba8();
-            for (x, y, pixel) in img_buffer.enumerate_pixels() {
-                let xor_pixel = xor_img.get_pixel(x, y);
-                xor_img.put_pixel(x, y, Rgba([
-                    xor_pixel[0] ^ pixel[0],
-                    xor_pixel[1] ^ pixel[1],
-                    xor_pixel[2] ^ pixel[2],
-                    xor_pixel[3] ^ pixel[3],
-                ]));
-            }
-        } else {
-            xor_image = Some(img);
-        }
-    }
+    // Assuming the first page is representative for all pages
+    let first_page_path = page_files.get(0).expect("No pages found");
+    let mut img = image::open(first_page_path).expect("Failed to open the first page");
 
-    // Save the XOR image
-    let xor_image_path = format!("{}/xor_image.png", output_dir);
-    let xor_image_unwrapped = xor_image.unwrap();
-    
-    // Remove black margin from the XOR image
-    let xor_image_unwrapped = remove_black_margin(xor_image_unwrapped);
-    
-    xor_image_unwrapped.save(&xor_image_path).unwrap();
+    // Crop towards the center until a non-white pixel is found
+    img = crop_towards_center(&mut img);
 
-    // Process the XOR image using the Sealed 1.0 process
-    process_image(&xor_image_path);
-    let processed_hash = image_hash(&xor_image_unwrapped);
+    // Apply XOR to random pixels in the image
+    xor_random_pixels(&mut img, 0.05); // 5% of the pixels
+
+    // Save the processed image
+    let processed_image_path = format!("{}/processed_image.png", output_dir);
+    img.save(&processed_image_path).expect("Failed to save processed image");
+
+    process_image(&processed_image_path);
+
+    // Calculate the hash of the processed image
+    let processed_hash = image_hash(&img);
     println!("Processed PDF saved in directory: {}", output_dir);
     println!("Processed hash: {}", processed_hash);
+
+    pb.finish_with_message("Processing complete.");
+
 }
 
 fn process_video(video_file: &str, frame_interval: u64, sample: Option<usize>) {
+    let mut path = env::var("PATH").unwrap();
+    path.push_str(";./libs");
+    env::set_var("PATH", &path);
     let pb = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner()
         .tick_chars("/|\\- ")
@@ -263,7 +297,7 @@ fn process_video(video_file: &str, frame_interval: u64, sample: Option<usize>) {
     let xor_image_path = format!("{}/xor_image.png", output_dir);
     let xor_image_unwrapped = xor_image.unwrap();
     xor_image_unwrapped.save(&xor_image_path).unwrap();
-    
+
 
     // Process the XOR image using the Sealed 1.0 process
     process_image(&xor_image_path);
@@ -312,12 +346,6 @@ fn process_image(image_file: &str) {
     let mut middle_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
     let mut cropped_no_whitespace_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
     image::imageops::replace(&mut cropped_no_whitespace_img, &middle_part, 20, 20);
-
-    for pixel in cropped_no_whitespace_img.pixels_mut() {
-        if pixel[0] == 255 && pixel[1] == 255 && pixel[2] == 255 {
-            *pixel = Rgba([0, 0, 0, 0]);
-        }
-    }
 
     let cropped_no_whitespace_path = format!("{}/share.png", upload_dir);
     cropped_no_whitespace_img.save_with_format(&cropped_no_whitespace_path, ImageFormat::Png).unwrap();
@@ -396,11 +424,15 @@ fn process_image(image_file: &str) {
     zip.write_all(&img_data).unwrap();
 
     zip.start_file("original.png", options).unwrap();
-    let img_data = std::fs::read(&cropped_path).unwrap();
+    let img_data = std::fs::read(&original_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
     zip.start_file("frame.png", options).unwrap();
     let img_data = std::fs::read(&parts_path).unwrap();
+    zip.write_all(&img_data).unwrap();
+
+    zip.start_file("recombined.png", options).unwrap();
+    let img_data = std::fs::read(&recombined_path).unwrap();
     zip.write_all(&img_data).unwrap();
 
     zip.start_file("hashes.txt", options).unwrap();
@@ -450,23 +482,5 @@ fn main() {
 
     let mut choice = String::new();
     io::stdin().read_line(&mut choice).expect("Failed to read line");
-
-    match choice.trim() {
-        "1" => {
-            let frame_interval = 1; // Set the default frame interval for video processing
-            process_video(file_or_directory_path, frame_interval, None);
-        }
-        "2" => {
-            process_image(file_or_directory_path);
-        }
-        "3" => {
-            process_directory(file_or_directory_path);
-        }
-        "4" => {
-            process_pdf(file_or_directory_path);
-        }
-        _ => {
-            println!("Invalid choice");
-        }
     }
 }
