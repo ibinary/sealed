@@ -12,6 +12,8 @@ use crate::archive::create_archive;
 use crate::signing::SealedKeyPair;
 use crate::verification::verify_image;
 use crate::ipfs::{pin_to_ipfs, IpfsConfig};
+use crate::video::process_video;
+use crate::pdf::process_pdf;
 
 /// Web server config.
 pub struct ServeConfig {
@@ -100,7 +102,7 @@ fn handle_seal(mut request: Request, config: &ServeConfig, file_type: &str) -> a
 
     info!("Upload saved: {} ({} bytes, type={})", input_path.display(), body.len(), file_type);
 
-    match seal_uploaded_image(&input_path, &upload_dir, config, ipfs_url, ipfs_key) {
+    match seal_uploaded_file(&input_path, &upload_dir, config, file_type, ipfs_url, ipfs_key) {
         Ok(json) => respond_json(request, 200, &json),
         Err(e) => {
             info!("Seal error: {}", e);
@@ -109,16 +111,22 @@ fn handle_seal(mut request: Request, config: &ServeConfig, file_type: &str) -> a
     }
 }
 
-/// Seal an uploaded image and return JSON response.
-fn seal_uploaded_image(input_path: &Path, upload_dir: &Path, config: &ServeConfig, ipfs_url: Option<String>, ipfs_key: Option<String>) -> anyhow::Result<String> {
-    let img = open_image_by_content(input_path)?;
-
+/// Seal an uploaded file and return JSON response.
+fn seal_uploaded_file(input_path: &Path, upload_dir: &Path, config: &ServeConfig, file_type: &str, ipfs_url: Option<String>, ipfs_key: Option<String>) -> anyhow::Result<String> {
     let seal_config = SealConfig::default();
-    let artifacts = seal_image(&img, &seal_config)?;
 
-    save_artifacts(&artifacts, upload_dir)?;
+    let artifacts = match file_type {
+        "video" => process_video(input_path, upload_dir, 1, None, &seal_config)?,
+        "pdf" => process_pdf(input_path, upload_dir, &seal_config)?,
+        _ => {
+            let img = open_image_by_content(input_path)?;
+            let arts = seal_image(&img, &seal_config)?;
+            save_artifacts(&arts, upload_dir)?;
+            arts
+        }
+    };
 
-    let tile_index = generate_tile_index(&img);
+    let tile_index = generate_tile_index(&artifacts.original);
 
     let tile_json = serde_json::to_string_pretty(&tile_index)?;
     fs::write(upload_dir.join("tile_index.json"), &tile_json)?;

@@ -277,6 +277,10 @@ fn convert_with_ffmpeg(path: &Path) -> SealedResult<DynamicImage> {
         .arg("-y")
         .arg("-i")
         .arg(path.as_os_str())
+        .arg("-frames:v")
+        .arg("1")
+        .arg("-update")
+        .arg("1")
         .arg(temp_png.as_os_str())
         .status()
         .map_err(|_| SealedError::ExternalTool {
