@@ -1,486 +1,477 @@
-extern crate image;
-
-use indicatif::{ProgressBar, ProgressStyle};
-use std::fs::read_dir;
-use std::process::Command;
-use rand::Rng;
-use std::io;
-use rand::thread_rng;
-use image::GenericImage;
-use image::io::Reader as ImageReader;
-use std::time::{SystemTime, UNIX_EPOCH};
-use image::{GenericImageView, ImageFormat, Rgba, RgbaImage};
-use serde_json::json;
-use image::{imageops::FilterType, GrayImage, ImageBuffer, DynamicImage};
-use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::io::Write;
-use rand::seq::SliceRandom;
-use std::hash::{Hash, Hasher};
-use fnv::FnvHasher;
-use std::fs;
-use std::path::{Path};
-use std::env;
-const PART_SIZE: u32 = 20;
-const HASH_SIZE: u32 = 32;
 
-fn crop_towards_center(img: &mut DynamicImage) -> DynamicImage {
-    let (width, height) = img.dimensions();
-    let mut top = 0;
-    let mut bottom = height;
-    let mut left = 0;
-    let mut right = width;
+use anyhow::{Context, Result};
+use clap::Parser;
+use tracing::{info, error};
+use tracing_subscriber::EnvFilter;
+use uuid::Uuid;
 
-    'outer: for y in 0..height {
-        for x in 0..width {
-            let pixel = img.get_pixel(x, y);
-            if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
-                top = y;
-                break 'outer;
-            }
+use sealed::cli::{Cli, Commands};
+use sealed::errors::SealedError;
+use sealed::image_processing::{seal_image, save_artifacts, open_image_by_content, SealConfig};
+use sealed::signing::SealedKeyPair;
+use sealed::verification::{verify_image, SealedRecord};
+use sealed::archive::create_archive;
+use sealed::ipfs::{pin_to_ipfs, IpfsConfig};
+use sealed::video::process_video;
+use sealed::pdf::process_pdf;
+use sealed::timestamp::{timestamp_hash, spawn_upgrade_listener, run_upgrade_loop};
+use sealed::tile_hashing::generate_tile_index;
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    let filter = if cli.verbose {
+        EnvFilter::new("sealed=debug,info")
+    } else {
+        EnvFilter::new("sealed=info,warn")
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .init();
+
+    match cli.command {
+        Commands::Seal {
+            input,
+            output,
+            edge_width,
+            key,
+            ipfs,
+            ipfs_url,
+            ipfs_key,
+            frame_interval,
+            sample_frames,
+            timestamp,
+        } => {
+            cmd_seal(
+                &input, output.as_deref(), edge_width, key.as_deref(),
+                ipfs, &ipfs_url, ipfs_key, frame_interval, sample_frames,
+                timestamp,
+            )?;
+        }
+
+        Commands::Verify {
+            suspect,
+            sealed_dir,
+            public_key,
+        } => {
+            cmd_verify(&suspect, &sealed_dir, public_key.as_deref())?;
+        }
+
+        Commands::Keygen { output, password } => {
+            cmd_keygen(&output, password)?;
+        }
+
+        Commands::Serve {
+            port,
+            static_dir,
+            uploads_dir,
+            key,
+        } => {
+            sealed::web_server::run_server(sealed::web_server::ServeConfig {
+                port,
+                static_dir,
+                uploads_dir,
+                key_path: key,
+            })?;
+        }
+
+        Commands::OtsUpgrade { hash, output_dir, ipfs_url, ipfs_key } => {
+            run_upgrade_loop(&hash, &output_dir, ipfs_url.as_deref(), ipfs_key.as_deref());
+        }
+
+        Commands::IpfsPin {
+            sealed_dir,
+            ipfs_url,
+            ipfs_key,
+        } => {
+            cmd_ipfs_pin(&sealed_dir, &ipfs_url, ipfs_key)?;
         }
     }
 
-    'outer: for y in (0..height).rev() {
-        for x in 0..width {
-            let pixel = img.get_pixel(x, y);
-            if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
-                bottom = y;
-                break 'outer;
-            }
-        }
-    }
-
-    'outer: for x in 0..width {
-        for y in 0..height {
-            let pixel = img.get_pixel(x, y);
-            if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
-                left = x;
-                break 'outer;
-            }
-        }
-    }
-
-    'outer: for x in (0..width).rev() {
-        for y in 0..height {
-            let pixel = img.get_pixel(x, y);
-            if pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255 {
-                right = x;
-                break 'outer;
-            }
-        }
-    }
-
-    // Crop 8-10px in from the found edges
-    let mut rng = rand::thread_rng();
-    let crop_margin = rng.gen_range(10..21);
-    img.crop(
-        (left + crop_margin).min(width),
-        (top + crop_margin).min(height),
-        (right - left).saturating_sub(2 * crop_margin),
-        (bottom - top).saturating_sub(2 * crop_margin)
-    )
+    Ok(())
 }
 
-fn image_hash(img: &DynamicImage) -> u64 {
-    let mut hasher = FnvHasher::default();
-    let (width, height) = img.dimensions();
-    for y in 0..height {
-        for x in 0..width {
-            let pixel = img.get_pixel(x, y);
-            let pixel_str = format!("{},{},{},{},{}", x, y, pixel[0], pixel[1], pixel[2]);
-            pixel_str.hash(&mut hasher);
-        }
-    }
-    hasher.finish()
-}
-
-fn ahash(img: &GrayImage, hash_size: u32) -> u64 {
-    let img = image::imageops::resize(img, hash_size, hash_size, FilterType::Nearest);
-    let mut ahash: u64 = 0;
-    let avg: u64 = img.pixels().map(|p| p[0] as u64).sum::<u64>() / ((hash_size * hash_size) as u64);
-    for (_i, pixel) in img.pixels().enumerate() {
-        ahash <<= 1;
-        if pixel[0] as u64 >= avg {
-            ahash |= 1;
-        }
-    }
-    ahash
-}
-
-fn dhash(img: &GrayImage, hash_size: u32) -> u64 {
-    let img = image::imageops::resize(img, hash_size + 1, hash_size, FilterType::Nearest);
-    let mut dhash: u64 = 0;
-    for row in 0..hash_size {
-        for col in 0..hash_size {
-            let pixel = img.get_pixel(col, row).0[0] as u64;
-            let pixel_right = img.get_pixel(col + 1, row).0[0] as u64;
-            dhash <<= 1;
-            if pixel > pixel_right {
-                dhash |= 1;
-            }
-        }
-    }
-    dhash
-}
-
-fn generate_uuid() -> String {
-    let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
-    let in_ms = since_the_epoch.as_secs() * 1000 +
-        since_the_epoch.subsec_nanos() as u64 / 1_000_000;
-
-    let mut rng = rand::thread_rng();
-    let random: u64 = rng.gen();
-
-    format!("{:x}-{:x}", in_ms, random)
-}
-
-
-fn xor_random_pixels(img: &mut DynamicImage, percentage: f32) {
-    let (width, height) = img.dimensions();
-    let num_pixels_to_xor = ((width as f32) * (height as f32) * percentage).round() as u32;
-    let mut rng = thread_rng();
-
-    // Create an RGBA image to work with
-    let mut rgba_img = img.to_rgba8();
-
-    for _ in 0..num_pixels_to_xor {
-        let x = rng.gen_range(0..width);
-        let y = rng.gen_range(0..height);
-
-        let mut current_pixel = rgba_img.get_pixel_mut(x, y);
-
-        // Check if the pixel is black
-        if current_pixel[0] == 0 && current_pixel[1] == 0 && current_pixel[2] == 0 {
-            // Apply the XOR operation to black pixels
-            let random_value = rng.gen::<u8>();
-            let random_value = if random_value == 0 { 1 } else { random_value };
-            current_pixel[0] ^= random_value;
-            current_pixel[1] ^= random_value;
-            current_pixel[2] ^= random_value;
-            current_pixel[3] = 0; // Set alpha to 0 to make black XOR'd pixels transparent
-        }
-    }
-
-    // Update the input image with the modified RGBA image
-    *img = DynamicImage::ImageRgba8(rgba_img);
-}
-fn process_pdf(pdf_file: &str) {
-    let mut path = env::var("PATH").unwrap();
-    path.push_str(";./libs");
-    env::set_var("PATH", &path);
-
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(ProgressStyle::default_spinner()
-        .tick_chars("/|\\- ")
-        .template("{spinner:.green} {wide_msg}"));
-
-    let pdf_path = Path::new(pdf_file);
-    let pdf_name = pdf_path.file_stem().unwrap().to_str().unwrap();
-    let output_dir = format!("sealed/{}-{}", pdf_name, generate_uuid());
-    fs::create_dir_all(&output_dir).unwrap();
-
-    let status = Command::new("pdftopng")
-        .arg(pdf_file)
-        .arg(format!("{}/page", output_dir))
-        .status()
-        .expect("Failed to execute command");
-
-    if !status.success() {
-        panic!("Failed to convert PDF to images");
-    }
-
-    pb.set_message("Processing pages...");
-    pb.tick();
-
-    let page_files: Vec<_> = read_dir(&output_dir)
-        .unwrap()
-        .map(|res| res.map(|e| e.path()))
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-
-    // Assuming the first page is representative for all pages
-    let first_page_path = page_files.get(0).expect("No pages found");
-    let mut img = image::open(first_page_path).expect("Failed to open the first page");
-
-    // Crop towards the center until a non-white pixel is found
-    img = crop_towards_center(&mut img);
-
-    // Apply XOR to random pixels in the image
-    xor_random_pixels(&mut img, 0.05); // 5% of the pixels
-
-    // Save the processed image
-    let processed_image_path = format!("{}/processed_image.png", output_dir);
-    img.save(&processed_image_path).expect("Failed to save processed image");
-
-    process_image(&processed_image_path);
-
-    // Calculate the hash of the processed image
-    let processed_hash = image_hash(&img);
-    println!("Processed PDF saved in directory: {}", output_dir);
-    println!("Processed hash: {}", processed_hash);
-
-    pb.finish_with_message("Processing complete.");
-
-}
-
-fn process_video(video_file: &str, frame_interval: u64, sample: Option<usize>) {
-    let mut path = env::var("PATH").unwrap();
-    path.push_str(";./libs");
-    env::set_var("PATH", &path);
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(ProgressStyle::default_spinner()
-        .tick_chars("/|\\- ")
-        .template("{spinner:.green} {wide_msg}"));
-
-    let video_path = Path::new(video_file);
-    let video_name = video_path.file_stem().unwrap().to_str().unwrap();
-    let output_dir = format!("sealed/{}-{}", video_name, generate_uuid());
-    std::fs::create_dir_all(&output_dir).unwrap();
-
-    // Extract frames from the video using ffmpeg
-    let output_frames = format!("{}/frame-%04d.png", output_dir);
-    let status = Command::new("ffmpeg")
-        .arg("-i")
-        .arg(video_file)
-        .arg("-vf")
-        .arg(format!("fps=1/{}", frame_interval)) // Extract 1 frame every 'frame_interval' seconds
-        .arg(output_frames)
-        .status()
-        .expect("Failed to execute ffmpeg command");
-
-    if !status.success() {
-        panic!("Failed to extract frames from video");
-    }
-
-    // XOR the frames to a single image
-    let mut xor_image: Option<DynamicImage> = None;
-    let frame_files: Vec<_> = read_dir(&output_dir)
-    .unwrap()
-    .map(|res| res.map(|e| e.path()))
-    .collect::<Result<Vec<_>, _>>()
-    .unwrap();
-
-    let frame_files = match sample {
-        Some(n) => {
-            let mut rng = thread_rng();
-            frame_files.choose_multiple(&mut rng, n).cloned().collect()
-        }
-        None => frame_files,
+fn cmd_seal(
+    input: &Path,
+    output: Option<&Path>,
+    edge_width: u32,
+    key_path: Option<&Path>,
+    ipfs: bool,
+    ipfs_url: &str,
+    ipfs_key: Option<String>,
+    frame_interval: u64,
+    sample_frames: Option<usize>,
+    timestamp: bool,
+) -> Result<()> {
+    let config = SealConfig {
+        edge_width,
+        ..SealConfig::default()
     };
 
-    for entry in frame_files {
-        pb.set_message("Processing frames...");
-        pb.tick();
-        let path = entry;
-        if path.extension().unwrap_or_default() == "png" {
-            let img = ImageReader::open(path).unwrap().decode().unwrap();
-            if let Some(ref mut xor_img) = xor_image {
-                let img_buffer = img.to_rgba8();
-                for (x, y, pixel) in img_buffer.enumerate_pixels() {
-                    let xor_pixel = xor_img.get_pixel(x, y);
-                    xor_img.put_pixel(x, y, Rgba([
-                        xor_pixel[0] ^ pixel[0],
-                        xor_pixel[1] ^ pixel[1],
-                        xor_pixel[2] ^ pixel[2],
-                        xor_pixel[3] ^ pixel[3],
-                    ]));
+    let file_stem = input
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "sealed".to_string());
+
+    let final_dir = match output {
+        Some(p) => p.to_path_buf(),
+        None => PathBuf::from(format!("sealed/{}-{}", file_stem, Uuid::new_v4())),
+    };
+
+    let temp_dir = final_dir.with_extension("tmp");
+    if temp_dir.exists() {
+        std::fs::remove_dir_all(&temp_dir)
+            .context("Failed to clean up previous temp directory")?;
+    }
+    std::fs::create_dir_all(&temp_dir)
+        .context("Failed to create temp output directory")?;
+    let output_dir = temp_dir.clone();
+
+    let ext = input
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    let artifacts = if input.is_dir() {
+        info!("Processing directory: {}", input.display());
+        let mut count = 0;
+        let mut last_artifacts = None;
+        for entry in std::fs::read_dir(input)? {
+            let entry = entry?;
+            let path = entry.path();
+            if is_image_file(&path) {
+                let img = open_image_by_content(&path)?;
+                let sub_dir = output_dir.join(format!("{}", count));
+                let arts = seal_image(&img, &config)?;
+                save_artifacts(&arts, &sub_dir)?;
+                write_hash_record(&arts, &sub_dir, key_path)?;
+                info!("Sealed: {} -> {}", path.display(), sub_dir.display());
+                last_artifacts = Some(arts);
+                count += 1;
+            }
+        }
+        info!("Sealed {} images from directory", count);
+        match last_artifacts {
+            Some(arts) => arts,
+            None => {
+                println!("No images found in directory.");
+                return Ok(());
+            }
+        }
+    } else if matches!(ext.as_str(), "mp4" | "avi" | "mov" | "mkv" | "webm") {
+        info!("Processing video: {}", input.display());
+        process_video(input, &output_dir, frame_interval, sample_frames, &config)?
+    } else if ext == "pdf" {
+        info!("Processing PDF: {}", input.display());
+        process_pdf(input, &output_dir, &config)?
+    } else {
+        // Try to open as an image regardless of extension (detect format from content)
+        info!("Processing image: {}", input.display());
+        let img = open_image_by_content(input)?;
+        let arts = seal_image(&img, &config)?;
+        save_artifacts(&arts, &output_dir)?;
+        arts
+    };
+
+    if !input.is_dir() {
+        write_hash_record(&artifacts, &output_dir, key_path)?;
+    }
+
+    let archive_path = create_archive(&output_dir, &file_stem)?;
+    info!("Archive: {}", archive_path.display());
+
+    let ipfs_key_for_ots = ipfs_key.clone();
+    if ipfs {
+        let ipfs_key_resolved = ipfs_key.or_else(|| std::env::var("SEALED_IPFS_KEY").ok());
+        let ipfs_config = if let Some(ref api_key) = ipfs_key_resolved {
+            IpfsConfig::pinata(api_key)
+        } else {
+            IpfsConfig {
+                api_url: ipfs_url.to_string(),
+                ..IpfsConfig::default()
+            }
+        };
+
+        let hashes_path = output_dir.join("hashes.json");
+        match pin_to_ipfs(&hashes_path, &ipfs_config) {
+            Ok(record) => {
+                info!("IPFS CID (hashes): {}", record.cid);
+                info!("IPFS Gateway: {}", record.gateway_url);
+                let ipfs_json = serde_json::to_string_pretty(&record)?;
+                let ipfs_path = output_dir.join("ipfs_record.json");
+                std::fs::write(&ipfs_path, ipfs_json)?;
+            }
+            Err(e) => {
+                error!("IPFS pinning failed: {}. Sealed record saved locally.", e);
+            }
+        }
+
+        let signed_path = output_dir.join("signed_record.json");
+        if signed_path.exists() {
+            match pin_to_ipfs(&signed_path, &ipfs_config) {
+                Ok(record) => {
+                    info!("IPFS CID (signed): {}", record.cid);
+                    info!("IPFS Gateway (signed): {}", record.gateway_url);
+                    let ipfs_json = serde_json::to_string_pretty(&record)?;
+                    let ipfs_path = output_dir.join("ipfs_signed_record.json");
+                    std::fs::write(&ipfs_path, ipfs_json)?;
                 }
-            } else {
-                xor_image = Some(img);
+                Err(e) => {
+                    error!("IPFS pinning of signed record failed: {}", e);
+                }
             }
         }
     }
 
-    // Save the XOR image
-    let xor_image_path = format!("{}/xor_image.png", output_dir);
-    let xor_image_unwrapped = xor_image.unwrap();
-    xor_image_unwrapped.save(&xor_image_path).unwrap();
-
-
-    // Process the XOR image using the Sealed 1.0 process
-    process_image(&xor_image_path);
-    let processed_hash = image_hash(&xor_image_unwrapped);
-    println!("Processed video saved in directory: {}", output_dir);
-    println!("Processed hash: {}", processed_hash);
-}
-
-fn process_image(image_file: &str) {
-    let img = image::open(image_file).unwrap();
-    let (width, height) = img.dimensions();
-    let img_gray = img.to_luma8();
-
-    let file_name = Path::new(image_file).file_name().unwrap().to_str().unwrap();
-    let upload_dir = format!("sealed/{}-{}", file_name, generate_uuid());
-    std::fs::create_dir_all(&upload_dir).unwrap();
-    let original_path = format!("{}/original.png", upload_dir);
-    img.save(&original_path).unwrap();
-    let img = image::open(&original_path).unwrap();
-
-    let top_part = img.view(0, 0, width, PART_SIZE).to_image();
-    let bottom_part = img.view(0, height - PART_SIZE, width, PART_SIZE).to_image();
-    let left_part = img.view(0, PART_SIZE, PART_SIZE, height - 2 * PART_SIZE).to_image();
-    let right_part = img.view(width - PART_SIZE, PART_SIZE, PART_SIZE, height - 2 * PART_SIZE).to_image();
-    let middle_part = img.view(PART_SIZE, PART_SIZE, width - 2 * PART_SIZE, height - 2 * PART_SIZE).to_image();
-
-    let mut parts_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
-    image::imageops::replace(&mut parts_img, &top_part, 0, 0);
-    image::imageops::replace(&mut parts_img, &bottom_part, 0, height - 20);
-    image::imageops::replace(&mut parts_img, &left_part, 0, 20);
-    image::imageops::replace(&mut parts_img, &right_part, width - 20, 20);
-
-    let parts_path = format!("{}/frame.png", upload_dir);
-    parts_img.save_with_format(&parts_path, ImageFormat::Png).unwrap();
-
-    let mut recombined_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
-    image::imageops::replace(&mut recombined_img, &top_part, 0, 0);
-    image::imageops::replace(&mut recombined_img, &bottom_part, 0, height - PART_SIZE);
-    image::imageops::replace(&mut recombined_img, &left_part, 0, PART_SIZE);
-    image::imageops::replace(&mut recombined_img, &right_part, width - PART_SIZE, PART_SIZE);
-    image::imageops::replace(&mut recombined_img, &middle_part, PART_SIZE, PART_SIZE);
-
-    let recombined_path = format!("{}/recombined.png", upload_dir);
-    recombined_img.save_with_format(&recombined_path, ImageFormat::Png).unwrap();
-
-    let mut middle_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
-    let mut cropped_no_whitespace_img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
-    image::imageops::replace(&mut cropped_no_whitespace_img, &middle_part, 20, 20);
-
-    let cropped_no_whitespace_path = format!("{}/share.png", upload_dir);
-    cropped_no_whitespace_img.save_with_format(&cropped_no_whitespace_path, ImageFormat::Png).unwrap();
-
-    image::imageops::replace(&mut middle_img, &middle_part, 20, 20);
-    let cropped_path = format!("{}/cropped.png", upload_dir);
-    middle_img.save_with_format(&cropped_path, ImageFormat::Png).unwrap();
-
-    let original_dhash = dhash(&img_gray, HASH_SIZE);
-    let original_ahash = ahash(&img_gray, HASH_SIZE);
-
-    let parts_img_clone = parts_img.clone();
-    let parts_img_gray = DynamicImage::ImageRgba8(parts_img).to_luma8();
-    let parts_dhash = dhash(&parts_img_gray, HASH_SIZE);
-    let parts_ahash = ahash(&parts_img_gray, HASH_SIZE);
-
-    let middle_img_clone = middle_img.clone();
-    let middle_img_gray = DynamicImage::ImageRgba8(middle_img).to_luma8();
-    let middle_dhash = dhash(&middle_img_gray, HASH_SIZE);
-    let middle_ahash = ahash(&middle_img_gray, HASH_SIZE);
-
-    let recombined_img_clone = recombined_img.clone();
-    let recombined_img_gray = DynamicImage::ImageRgba8(recombined_img).to_luma8();
-    let recombined_dhash = dhash(&recombined_img_gray, HASH_SIZE);
-    let recombined_ahash = ahash(&recombined_img_gray, HASH_SIZE);
-
-    let original_hash = image_hash(&img);
-    let parts_hash = image_hash(&DynamicImage::ImageRgba8(parts_img_clone));
-    let cropped_hash = image_hash(&DynamicImage::ImageRgba8(middle_img_clone));
-    let recombined_hash = image_hash(&DynamicImage::ImageRgba8(recombined_img_clone));
-
-    let response = json!({
-        "originalImagePath": format!("{}/original.png", upload_dir),
-        "originalDhash": format!("{:016x}", original_dhash),
-        "originalAhash": format!("{:016x}", original_ahash),
-        "partsImagePath": format!("{}/frame.png", upload_dir),
-        "partsDhash": format!("{:016x}", parts_dhash),
-        "partsAhash": format!("{:016x}", parts_ahash),
-        "croppedImagePath": format!("{}/cropped.png", upload_dir),
-        "originalImageHash": format!("{:016x}", original_hash),
-        "partsImageHash": format!("{:016x}", parts_hash),
-        "croppedImageHash": format!("{:016x}", cropped_hash),
-        "recombinedImageHash": format!("{:016x}", recombined_hash),
-        "croppedImageDhash": format!("{:016x}", middle_dhash),
-        "croppedImageAhash": format!("{:016x}", middle_ahash),
-        "recombinedImagePath": format!("{}/recombined.png", upload_dir),
-        "recombinedDhash": format!("{:016x}", recombined_dhash),
-        "recombinedAhash": format!("{:016x}", recombined_ahash),
-        "archiveURL": format!("{}", upload_dir),
-    });
-
-    // Save the response JSON to a file
-    let _file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
-    let response_json = serde_json::to_string_pretty(&response).unwrap();
-    let mut response_file = File::create(format!("{}/hashes.json", upload_dir)).unwrap();
-    response_file.write_all(response_json.as_bytes()).unwrap();
-
-    let mut file = File::create(format!("{}/hashes.txt", upload_dir)).unwrap();
-    writeln!(file, "Original image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", original_dhash, original_ahash, original_hash).ok();
-    writeln!(file, "Cropped image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", middle_dhash, middle_ahash, cropped_hash).ok();
-    writeln!(file, "Frame image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", parts_dhash, parts_ahash, parts_hash).ok();
-    writeln!(file, "Recombined image dHash: {:016x}, aHash: {:016x}, pHash: {:016x}", recombined_dhash, recombined_ahash, recombined_hash).ok();
-
-    let archive_name = format!("{}.zip", file_name);
-    let path_str = format!("{}/{}", upload_dir, archive_name);
-    let path = Path::new(&path_str);
-    let file = File::create(&path).unwrap();
-    let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::FileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored)
-        .unix_permissions(0o755);
-
-
-    zip.start_file("cropped.png", options).unwrap();
-    let img_data = std::fs::read(&cropped_path).unwrap();
-    zip.write_all(&img_data).unwrap();
-
-    zip.start_file("original.png", options).unwrap();
-    let img_data = std::fs::read(&original_path).unwrap();
-    zip.write_all(&img_data).unwrap();
-
-    zip.start_file("frame.png", options).unwrap();
-    let img_data = std::fs::read(&parts_path).unwrap();
-    zip.write_all(&img_data).unwrap();
-
-    zip.start_file("recombined.png", options).unwrap();
-    let img_data = std::fs::read(&recombined_path).unwrap();
-    zip.write_all(&img_data).unwrap();
-
-    zip.start_file("hashes.txt", options).unwrap();
-    let txt_data = std::fs::read(format!("{}/hashes.txt", upload_dir)).unwrap();
-    zip.write_all(&txt_data).unwrap();
-
-    zip.start_file("hashes.json", options).unwrap();
-    let json_data = std::fs::read(format!("{}/hashes.json", upload_dir)).unwrap();
-    zip.write_all(&json_data).unwrap();
-
-    zip.finish().unwrap();
-
-    println!("Response: {}", response);
-}
-
-fn process_directory(directory: &str) {
-    let paths = fs::read_dir(directory).unwrap();
-
-    for path in paths {
-        let entry = path.unwrap();
-        let _file_name = entry.file_name().into_string().unwrap();
-        let file_path = entry.path();
-        let extension = file_path.extension().unwrap_or_default();
-        if extension == "png" || extension == "jpg" || extension == "jpeg" {
-            println!("Processing image file: {:?}", file_path);
-            process_image(file_path.to_str().unwrap());
-            println!("------------------------------");
+    let mut ots_submitted = false;
+    if timestamp {
+        info!("Submitting hash to OpenTimestamps...");
+        match timestamp_hash(&artifacts.original_hashes.sha256, &output_dir) {
+            Ok(record) => {
+                info!("OpenTimestamps proof saved: {}", record.ots_file);
+                println!("OpenTimestamps: proof submitted (pending Bitcoin confirmation)");
+                ots_submitted = true;
+            }
+            Err(e) => {
+                error!("OpenTimestamps failed: {}. Sealed record saved locally.", e);
+            }
         }
     }
+
+    if final_dir.exists() {
+        std::fs::remove_dir_all(&final_dir)
+            .context("Failed to remove existing output directory")?;
+    }
+    std::fs::rename(&temp_dir, &final_dir)
+        .context("Failed to move sealed output to final directory")?;
+
+    if ots_submitted {
+        let ipfs_url_arg: Option<&str> = if ipfs { Some(ipfs_url) } else { None };
+        let ipfs_key_arg = if ipfs { ipfs_key_for_ots.as_deref() } else { None };
+        spawn_upgrade_listener(&artifacts.original_hashes.sha256, &final_dir, ipfs_url_arg, ipfs_key_arg);
+    }
+
+    println!("\n=== SEALED SUCCESSFULLY ===");
+    println!("Output: {}", final_dir.display());
+    println!("SHA-256: {}", artifacts.original_hashes.sha256);
+    println!("BLAKE3:  {}", artifacts.original_hashes.blake3);
+
+    if ots_submitted {
+        println!("OTS: background process polling for Bitcoin confirmation.");
+    }
+
+    Ok(())
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
+fn write_hash_record(
+    artifacts: &sealed::image_processing::SealedArtifacts,
+    output_dir: &Path,
+    key_path: Option<&Path>,
+) -> Result<()> {
+    info!("Generating tile hash index for crop detection...");
+    let tile_index = generate_tile_index(&artifacts.original);
 
-    if args.len() < 2 {
-        println!("Usage: {} <file_or_directory_path>", args[0]);
-        return;
+    let tile_json = serde_json::to_string_pretty(&tile_index)?;
+    let tile_path = output_dir.join("tile_index.json");
+    std::fs::write(&tile_path, &tile_json)?;
+    info!("Tile index: {} ({} blocks)", tile_path.display(), tile_index.blocks.len());
+
+    let sealed_record = SealedRecord {
+        original: artifacts.original_hashes.clone(),
+        frame: artifacts.frame_hashes.clone(),
+        cropped: artifacts.cropped_hashes.clone(),
+        recombined: artifacts.recombined_hashes.clone(),
+        share: Some(artifacts.share_hashes.clone()),
+        tile_index: None,
+        sealed_at: chrono::Utc::now().to_rfc3339(),
+        sealed_version: env!("CARGO_PKG_VERSION").to_string(),
+    };
+
+    let json = serde_json::to_string_pretty(&sealed_record)?;
+    let hashes_path = output_dir.join("hashes.json");
+    std::fs::write(&hashes_path, &json)?;
+    info!("Hash record: {}", hashes_path.display());
+
+    let txt_path = output_dir.join("hashes.txt");
+    let mut f = std::fs::File::create(&txt_path)?;
+    writeln!(f, "=== Sealed Hash Record ===")?;
+    writeln!(f, "Sealed at: {}", sealed_record.sealed_at)?;
+    writeln!(f, "Version: {}", sealed_record.sealed_version)?;
+    writeln!(f)?;
+    writeln!(f, "Original SHA-256: {}", sealed_record.original.sha256)?;
+    writeln!(f, "Original BLAKE3:  {}", sealed_record.original.blake3)?;
+    writeln!(f, "Original aHash:   {}", sealed_record.original.ahash)?;
+    writeln!(f, "Original dHash:   {}", sealed_record.original.dhash)?;
+    writeln!(f, "Original pHash:   {}", sealed_record.original.phash)?;
+    writeln!(f)?;
+    writeln!(f, "Frame SHA-256:    {}", sealed_record.frame.sha256)?;
+    writeln!(f, "Frame BLAKE3:     {}", sealed_record.frame.blake3)?;
+    writeln!(f)?;
+    writeln!(f, "Cropped SHA-256:  {}", sealed_record.cropped.sha256)?;
+    writeln!(f, "Cropped BLAKE3:   {}", sealed_record.cropped.blake3)?;
+    writeln!(f)?;
+    writeln!(f, "Recombined SHA-256: {}", sealed_record.recombined.sha256)?;
+    writeln!(f, "Recombined BLAKE3:  {}", sealed_record.recombined.blake3)?;
+
+    if let Some(key_file) = key_path {
+            let is_encrypted = {
+            let data = std::fs::read(key_file).unwrap_or_default();
+            data.starts_with(sealed::signing::ENCRYPTED_KEY_MAGIC)
+        };
+        let keypair = if is_encrypted {
+            let password = rpassword::prompt_password("Enter key password: ")
+                .context("Failed to read password")?;
+            SealedKeyPair::load_encrypted(key_file, &password)
+                .context("Failed to decrypt signing key")?  
+        } else {
+            SealedKeyPair::load(key_file)
+                .context("Failed to load signing key")?
+        };
+        let envelope = keypair.sign(&json);
+        let signed_json = serde_json::to_string_pretty(&envelope)?;
+        let signed_path = output_dir.join("signed_record.json");
+        std::fs::write(&signed_path, &signed_json)?;
+        info!("Signed record: {}", signed_path.display());
+        writeln!(f)?;
+        writeln!(f, "Digitally signed with Ed25519")?;
+        writeln!(f, "Public key: {}", envelope.public_key)?;
     }
 
-    let file_or_directory_path = &args[1];
+    Ok(())
+}
 
-    println!("Choose an option:");
-    println!("1. Process a video");
-    println!("2. Process a single image");
-    println!("3. Process a directory of images");
-    println!("4. Process a PDF file");
+fn cmd_verify(suspect: &Path, sealed_dir: &Path, public_key: Option<&Path>) -> Result<()> {
+    info!("Verifying {} against {}", suspect.display(), sealed_dir.display());
 
-    let mut choice = String::new();
-    io::stdin().read_line(&mut choice).expect("Failed to read line");
+    let result = verify_image(suspect, sealed_dir, public_key)?;
+
+    println!("\n=== VERIFICATION RESULT ===");
+    println!("Verdict: {}", result.verdict);
+    println!();
+    println!("Signature valid: {}", result.signature_valid);
+    println!();
+    println!("vs Original:");
+    println!("  Confidence:    {}", result.vs_original.confidence);
+    println!("  Exact match:   {}", result.vs_original.exact_match);
+    println!("  SHA-256 match: {}", result.vs_original.sha256_match);
+    println!("  BLAKE3 match:  {}", result.vs_original.blake3_match);
+    println!("  aHash distance: {}", result.vs_original.ahash_hamming);
+    println!("  dHash distance: {}", result.vs_original.dhash_hamming);
+    println!("  pHash distance: {}", result.vs_original.phash_hamming);
+    println!();
+    println!("vs Cropped/Share:");
+    println!("  Confidence:    {}", result.vs_cropped.confidence);
+    println!("  Exact match:   {}", result.vs_cropped.exact_match);
+    println!("  SHA-256 match: {}", result.vs_cropped.sha256_match);
+    println!("  aHash distance: {}", result.vs_cropped.ahash_hamming);
+    println!("  dHash distance: {}", result.vs_cropped.dhash_hamming);
+    println!("  pHash distance: {}", result.vs_cropped.phash_hamming);
+    println!();
+    println!("Suspect image hashes:");
+    println!("  SHA-256: {}", result.suspect_hashes.sha256);
+    println!("  BLAKE3:  {}", result.suspect_hashes.blake3);
+
+    let result_json = serde_json::to_string_pretty(&result)?;
+    let result_path = suspect
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(format!(
+            "{}_verification.json",
+            suspect.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "suspect".to_string())
+        ));
+    std::fs::write(&result_path, &result_json)?;
+    info!("Verification result saved to {}", result_path.display());
+
+    Ok(())
+}
+
+fn cmd_keygen(output_dir: &Path, encrypt: bool) -> Result<()> {
+    std::fs::create_dir_all(output_dir)?;
+
+    let keypair = SealedKeyPair::generate();
+
+    let secret_path = output_dir.join("sealed.key");
+    let public_path = output_dir.join("sealed.pub");
+
+    if encrypt {
+        let password = rpassword::prompt_password("Enter password to encrypt secret key: ")
+            .context("Failed to read password")?;
+        let confirm = rpassword::prompt_password("Confirm password: ")
+            .context("Failed to read password confirmation")?;
+        if password != confirm {
+            anyhow::bail!("Passwords do not match");
+        }
+        keypair.save_secret_encrypted(&secret_path, &password)
+            .context("Failed to save encrypted secret key")?;
+        println!("=== Ed25519 Keypair Generated (encrypted) ===");
+        println!("Secret key: {} (PASSWORD-ENCRYPTED - KEEP THIS SAFE)", secret_path.display());
+    } else {
+        keypair.save_secret(&secret_path)
+            .context("Failed to save secret key")?;
+        println!("=== Ed25519 Keypair Generated ===");
+        println!("Secret key: {} (KEEP THIS SAFE - DO NOT SHARE)", secret_path.display());
     }
+
+    keypair.save_public(&public_path)
+        .context("Failed to save public key")?;
+
+    println!("Public key: {} (share freely for verification)", public_path.display());
+    println!("Public key (base64): {}", keypair.public_key_base64());
+
+    Ok(())
+}
+
+fn cmd_ipfs_pin(sealed_dir: &Path, ipfs_url: &str, ipfs_key: Option<String>) -> Result<()> {
+    let hashes_path = sealed_dir.join("hashes.json");
+    if !hashes_path.exists() {
+        return Err(SealedError::FileNotFound(
+            "hashes.json not found in sealed directory".to_string(),
+        ).into());
+    }
+
+    let ipfs_key_resolved = ipfs_key.or_else(|| std::env::var("SEALED_IPFS_KEY").ok());
+    let config = if let Some(ref api_key) = ipfs_key_resolved {
+        IpfsConfig::pinata(api_key)
+    } else {
+        IpfsConfig {
+            api_url: ipfs_url.to_string(),
+            ..IpfsConfig::default()
+        }
+    };
+
+    let record = pin_to_ipfs(&hashes_path, &config)?;
+
+    println!("\n=== IPFS Pin Successful ===");
+    println!("CID: {}", record.cid);
+    println!("Gateway: {}", record.gateway_url);
+    println!("Pinned at: {}", record.pinned_at);
+    println!("Service: {}", record.service);
+
+    let ipfs_json = serde_json::to_string_pretty(&record)?;
+    let ipfs_path = sealed_dir.join("ipfs_record.json");
+    std::fs::write(&ipfs_path, &ipfs_json)?;
+
+    let signed_path = sealed_dir.join("signed_record.json");
+    if signed_path.exists() {
+        info!("Also pinning signed record...");
+        let signed_record = pin_to_ipfs(&signed_path, &config)?;
+        println!("Signed record CID: {}", signed_record.cid);
+        println!("Signed record Gateway: {}", signed_record.gateway_url);
+    }
+
+    Ok(())
+}
+
+/// Check if a file is likely an image based on extension.
+fn is_image_file(path: &Path) -> bool {
+    let ext = path.extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    matches!(ext.as_str(),
+        "png" | "jpg" | "jpeg" | "bmp" | "tiff" | "tif" | "webp" |
+        "gif" | "avif" | "ico" | "pnm" | "pbm" | "pgm" | "ppm" | "qoi"
+    )
 }

@@ -1,18 +1,54 @@
 [package]
 name = "sealed-ch"
-version = "0.0.1"
-edition = "2018"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
 
 [dependencies]
-bzip2 = "0.4"
-image = "0.23.14"
+image = "0.25"
+
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-zip = "0.5.13"
-fnv = "1.0.7"
-indicatif = "0.15.0"
-rand = "0.8.4"
-structopt = "0.3"
-walkdir = "2"
+
+zip = { version = "2.1", default-features = false, features = ["deflate"] }
+
+sha2 = "0.10"
+blake3 = "1.5"
+hex = "0.4"
+
+ed25519-dalek = { version = "2.1", features = ["rand_core", "pem"] }
+
+uuid = { version = "1.7", features = ["v4"] }
+
+clap = { version = "4.5", features = ["derive"] }
+
+anyhow = "1.0"
+thiserror = "1.0"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+indicatif = "0.17"
+
+rand = "0.8"
+
+reqwest = { version = "0.12", features = ["json", "blocking", "multipart"] }
+
+chrono = { version = "0.4", features = ["serde"] }
+
+base64 = "0.22"
+
+aes-gcm = "0.10"
+argon2 = "0.5"
+rpassword = "7.3"
+zeroize = "1.7"
+
+tiny_http = "0.12"
+
+[lib]
+name = "sealed"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sealed-ch"
 path = "src/main.rs"

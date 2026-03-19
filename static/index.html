@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sealed</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 48px 24px; }
+
+    /* Header */
+    .header { margin-bottom: 40px; }
+    .logo { font-size: 1.5rem; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+    .logo span { color: #4ade80; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 32px; }
+    .tab-btn {
+      padding: 8px 20px; font-size: 0.875rem; font-weight: 500; cursor: pointer;
+      background: transparent; color: #666; border: none; border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: #999; }
+    .tab-btn.active { color: #fff; border-bottom-color: #4ade80; }
+
+    /* Upload */
+    .drop-area {
+      border: 1px dashed #333; border-radius: 8px; padding: 48px 24px;
+      text-align: center; cursor: pointer; transition: border-color 0.2s;
+      margin-bottom: 24px;
+    }
+    .drop-area:hover, .drop-area.dragover { border-color: #4ade80; }
+    .drop-area input { display: none; }
+    .drop-area .label { font-size: 0.95rem; color: #ccc; margin-bottom: 4px; }
+    .drop-area .sub { font-size: 0.8rem; color: #555; }
+    .file-name { font-size: 0.8rem; color: #4ade80; margin-top: 8px; }
+
+    /* Verify row */
+    .verify-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    @media (max-width: 600px) { .verify-row { grid-template-columns: 1fr; } }
+
+    /* Buttons */
+    .btn {
+      display: inline-block; padding: 10px 24px; font-size: 0.875rem; font-weight: 500;
+      background: #4ade80; color: #0a0a0a; border: none; border-radius: 6px;
+      cursor: pointer; transition: opacity 0.15s; text-decoration: none;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-outline {
+      background: transparent; color: #4ade80; border: 1px solid #333;
+    }
+    .btn-outline:hover { border-color: #4ade80; }
+
+    /* Spinner */
+    .spinner { display: none; margin: 32px auto; }
+    .spinner.active { display: block; }
+    .spinner::after {
+      content: ''; display: block; width: 24px; height: 24px; margin: 0 auto;
+      border: 2px solid #222; border-top-color: #4ade80; border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Results */
+    #results {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px; margin-top: 24px;
+    }
+
+    .card {
+      background: #111; border: 1px solid #1a1a1a; border-radius: 8px;
+      padding: 14px; cursor: pointer; transition: border-color 0.15s;
+    }
+    .card:hover { border-color: #333; }
+    .card img {
+      width: 100%; height: 120px; object-fit: cover; border-radius: 4px;
+      margin-bottom: 10px; background: #0a0a0a;
+    }
+    .card h4 { font-size: 0.8rem; font-weight: 600; color: #ccc; margin-bottom: 8px; }
+    .row { display: flex; justify-content: space-between; font-size: 0.7rem; padding: 2px 0; }
+    .row .lbl { color: #555; }
+    .row .val { color: #999; font-family: 'SF Mono', Consolas, monospace; text-align: right; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Verdict */
+    .verdict {
+      grid-column: 1 / -1; padding: 16px 20px; border-radius: 8px;
+      font-size: 0.9rem; font-weight: 500; line-height: 1.5;
+    }
+    .verdict.exact, .verdict.high { background: #0a1f0a; color: #4ade80; border: 1px solid #1a3a1a; }
+    .verdict.medium, .verdict.low { background: #1a1a0a; color: #facc15; border: 1px solid #333a1a; }
+    .verdict.crop { background: #1a0a0a; color: #f87171; border: 1px solid #3a1a1a; }
+    .verdict.none { background: #111; color: #666; border: 1px solid #1a1a1a; }
+
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 0.7rem; font-weight: 600; margin-left: 8px;
+    }
+    .badge.ok { background: #0a1f0a; color: #4ade80; }
+    .badge.fail { background: #1a0a0a; color: #f87171; }
+
+    /* Download */
+    .dl-wrap { grid-column: 1 / -1; text-align: center; padding: 8px 0; }
+
+    /* Settings */
+    .settings { margin-bottom: 24px; }
+    .settings-toggle {
+      font-size: 0.8rem; color: #555; cursor: pointer; border: none;
+      background: none; padding: 0; margin-bottom: 8px;
+    }
+    .settings-toggle:hover { color: #999; }
+    .settings-body { display: none; }
+    .settings-body.open { display: block; }
+    .field { margin-bottom: 10px; }
+    .field label { display: block; font-size: 0.75rem; color: #555; margin-bottom: 4px; }
+    .field input {
+      width: 100%; padding: 8px 10px; font-size: 0.8rem;
+      background: #111; border: 1px solid #222; border-radius: 4px; color: #ccc;
+      font-family: 'SF Mono', Consolas, monospace; outline: none;
+    }
+    .field input:focus { border-color: #4ade80; }
+    .field input::placeholder { color: #333; }
+
+    /* Modal */
+    .modal {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+      justify-content: center; align-items: center; z-index: 1000;
+    }
+    .modal-inner {
+      background: #111; border: 1px solid #222; padding: 20px; border-radius: 8px;
+      max-width: 600px; max-height: 85vh; overflow-y: auto; text-align: center;
+      position: relative; scrollbar-width: none;
+    }
+    .modal-inner::-webkit-scrollbar { display: none; }
+    .modal img { max-width: 100%; max-height: 400px; border-radius: 4px; }
+    .modal p { color: #777; font-size: 0.8rem; margin-top: 10px; white-space: pre-line; text-align: left; font-family: 'SF Mono', Consolas, monospace; }
+    .modal-x {
+      position: absolute; top: 8px; right: 12px; background: none; border: none;
+      color: #555; font-size: 1.2rem; cursor: pointer;
+    }
+    .modal-x:hover { color: #fff; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <div class="logo"><span>sealed</span>.ch</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('seal',this)">Seal</button>
+    <button class="tab-btn" onclick="switchTab('verify',this)">Verify</button>
+  </div>
+
+  <!-- SEAL -->
+  <div id="tab-seal">
+    <div class="drop-area" id="sealZone" onclick="document.getElementById('sealFile').click()">
+      <input type="file" id="sealFile" accept="image/*,video/*,application/pdf">
+      <p class="label">Drop a file or click to browse</p>
+      <p class="sub">Image, video, or PDF</p>
+    </div>
+    <div class="settings">
+      <button class="settings-toggle" onclick="document.getElementById('settingsBody').classList.toggle('open')">
+        + IPFS settings (optional)
+      </button>
+      <div id="settingsBody" class="settings-body">
+        <div class="field">
+          <label>IPFS API endpoint</label>
+          <input type="text" id="ipfsUrl" placeholder="http://127.0.0.1:5001">
+        </div>
+        <div class="field">
+          <label>IPFS / Pinata API key</label>
+          <input type="password" id="ipfsKey" placeholder="Key (stays in your browser)">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VERIFY -->
+  <div id="tab-verify" style="display:none">
+    <div class="verify-row">
+      <div class="drop-area" id="verifyOrigZone" onclick="document.getElementById('verifyOrig').click()">
+        <input type="file" id="verifyOrig" accept=".zip">
+        <p class="label">Sealed archive (.zip)</p>
+        <p class="sub">From a previous seal</p>
+        <p class="file-name" id="origName"></p>
+      </div>
+      <div class="drop-area" id="verifySuspectZone" onclick="document.getElementById('verifySuspect').click()">
+        <input type="file" id="verifySuspect" accept="image/*">
+        <p class="label">Suspect image</p>
+        <p class="sub">The image to check</p>
+        <p class="file-name" id="suspectName"></p>
+      </div>
+    </div>
+    <button class="btn" onclick="doVerify()">Verify</button>
+  </div>
+
+  <div class="spinner" id="spinner"></div>
+  <div id="results"></div>
+</div>
+
+<!-- Modal -->
+<div id="imageModal" class="modal">
+  <div class="modal-inner">
+    <button class="modal-x" onclick="closeModal()">&#10005;</button>
+    <img id="modalImage" src="">
+    <p id="modalDetails"></p>
+  </div>
+</div>
+
+<script>
+const modal = document.getElementById('imageModal');
+const modalImage = document.getElementById('modalImage');
+const modalDetails = document.getElementById('modalDetails');
+
+function switchTab(tab, el) {
+  document.getElementById('tab-seal').style.display = tab === 'seal' ? '' : 'none';
+  document.getElementById('tab-verify').style.display = tab === 'verify' ? '' : 'none';
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('results').innerHTML = '';
+}
+
+function openModal(src, details) { modal.style.display = 'flex'; modalImage.src = src; modalDetails.innerText = details; }
+function closeModal() { modal.style.display = 'none'; }
+modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+// Drag & drop
+['sealZone','verifyOrigZone','verifySuspectZone'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('dragover'); });
+  el.addEventListener('dragleave', () => el.classList.remove('dragover'));
+  el.addEventListener('drop', e => {
+    e.preventDefault(); el.classList.remove('dragover');
+    const input = el.querySelector('input[type=file]');
+    input.files = e.dataTransfer.files;
+    input.dispatchEvent(new Event('change'));
+  });
+});
+
+document.getElementById('sealFile').addEventListener('change', function() {
+  if (this.files && this.files[0]) doSeal(this.files[0]);
+});
+document.getElementById('verifyOrig').addEventListener('change', function() {
+  document.getElementById('origName').textContent = this.files[0]?.name || '';
+});
+document.getElementById('verifySuspect').addEventListener('change', function() {
+  document.getElementById('suspectName').textContent = this.files[0]?.name || '';
+});
+
+function showSpinner() { document.getElementById('spinner').classList.add('active'); }
+function hideSpinner() { document.getElementById('spinner').classList.remove('active'); }
+
+function hashCard(title, imgPath, h, ts) {
+  const info = `${title}\nSHA-256: ${h.sha256}\nBLAKE3: ${h.blake3}\naHash: ${h.ahash}  dHash: ${h.dhash}  pHash: ${h.phash}\n${h.width}x${h.height}`;
+  return `<div class="card" onclick="openModal('${imgPath}?${ts}','${info.replace(/'/g,"\\'")}')">
+    <img src="${imgPath}?${ts}" alt="${title}">
+    <h4>${title}</h4>
+    <div class="row"><span class="lbl">SHA-256</span><span class="val" title="${h.sha256}">${h.sha256.slice(0,12)}...</span></div>
+    <div class="row"><span class="lbl">BLAKE3</span><span class="val" title="${h.blake3}">${h.blake3.slice(0,12)}...</span></div>
+    <div class="row"><span class="lbl">aHash</span><span class="val">${h.ahash}</span></div>
+    <div class="row"><span class="lbl">dHash</span><span class="val">${h.dhash}</span></div>
+    <div class="row"><span class="lbl">pHash</span><span class="val">${h.phash}</span></div>
+  </div>`;
+}
+
+function doSeal(file) {
+  showSpinner();
+  document.getElementById('results').innerHTML = '';
+  const ep = file.type.startsWith('video/') ? '/video' : file.type === 'application/pdf' ? '/pdf' : '/image';
+
+  const headers = {};
+  const ipfsUrl = document.getElementById('ipfsUrl').value.trim();
+  const ipfsKey = document.getElementById('ipfsKey').value.trim();
+  if (ipfsUrl) headers['X-IPFS-Url'] = ipfsUrl;
+  if (ipfsKey) headers['X-IPFS-Key'] = ipfsKey;
+
+  fetch(ep, { method: 'POST', body: file, headers })
+    .then(r => r.json())
+    .then(data => {
+      hideSpinner();
+      const ts = Date.now();
+      let html = '';
+      if (data.original)    html += hashCard('Original',   data.originalImagePath,   data.original, ts);
+      if (data.frame)       html += hashCard('Edge Frame', data.partsImagePath,      data.frame, ts);
+      if (data.cropped)     html += hashCard('Cropped',    data.shareImagePath,      data.cropped, ts);
+      if (data.recombined)  html += hashCard('Recombined', data.recombinedImagePath, data.recombined, ts);
+
+      if (data.tile_index) {
+        html += `<div class="card"><h4>Block-DCT Index</h4>
+          <div class="row"><span class="lbl">Blocks</span><span class="val">${data.tile_index.blocks_count || '?'}</span></div>
+          <div class="row"><span class="lbl">Grid</span><span class="val">${data.tile_index.cols}x${data.tile_index.rows}</span></div>
+          <div class="row"><span class="lbl">Block size</span><span class="val">${data.tile_index.block_size}px</span></div></div>`;
+      }
+
+      if (data.ipfsCid) {
+        html += `<div class="card"><h4>IPFS</h4>
+          <div class="row"><span class="lbl">CID</span><span class="val" title="${data.ipfsCid}">${data.ipfsCid.slice(0,20)}...</span></div>
+          ${data.ipfsGateway ? `<div class="row"><span class="lbl">Gateway</span><span class="val"><a href="${data.ipfsGateway}" target="_blank" style="color:#4ade80">View</a></span></div>` : ''}</div>`;
+      }
+
+      if (data.signedBy) {
+        html += `<div class="card"><h4>Signature</h4>
+          <div class="row"><span class="lbl">Ed25519</span><span class="val" title="${data.signedBy}">${data.signedBy.slice(0,16)}...</span></div>
+          <span class="badge ok">Signed</span></div>`;
+      }
+
+      if (data.archiveURL) {
+        html += `<div class="dl-wrap"><a class="btn btn-outline" href="${data.archiveURL}" download>Download .zip</a></div>`;
+      }
+
+      document.getElementById('results').innerHTML = html;
+    })
+    .catch(err => { hideSpinner(); alert(err.message); });
+}
+
+function doVerify() {
+  const origFile = document.getElementById('verifyOrig').files[0];
+  const suspectFile = document.getElementById('verifySuspect').files[0];
+  if (!origFile || !suspectFile) { alert('Select both files'); return; }
+
+  showSpinner();
+  document.getElementById('results').innerHTML = '';
+  const fd = new FormData();
+  fd.append('archive', origFile);
+  fd.append('suspect', suspectFile);
+
+  fetch('/verify', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      hideSpinner();
+
+      let cls = 'none';
+      const v = (data.verdict || '').toUpperCase();
+      if (v.includes('EXACT')) cls = 'exact';
+      else if (v.includes('HIGH')) cls = 'high';
+      else if (v.includes('MEDIUM')) cls = 'medium';
+      else if (v.includes('LOW')) cls = 'low';
+      else if (v.includes('CROP')) cls = 'crop';
+
+      let html = `<div class="verdict ${cls}">${data.verdict}`;
+      if (data.signature_valid !== undefined)
+        html += `<span class="badge ${data.signature_valid ? 'ok' : 'fail'}">${data.signature_valid ? 'Sig valid' : 'Sig invalid'}</span>`;
+      html += `</div>`;
+
+      if (data.vs_original) {
+        const o = data.vs_original;
+        html += `<div class="card"><h4>vs Original</h4>
+          <div class="row"><span class="lbl">Confidence</span><span class="val">${o.confidence}</span></div>
+          <div class="row"><span class="lbl">Exact</span><span class="val">${o.exact_match}</span></div>
+          <div class="row"><span class="lbl">SHA-256</span><span class="val">${o.sha256_match}</span></div>
+          <div class="row"><span class="lbl">aHash</span><span class="val">${o.ahash_hamming}</span></div>
+          <div class="row"><span class="lbl">dHash</span><span class="val">${o.dhash_hamming}</span></div>
+          <div class="row"><span class="lbl">pHash</span><span class="val">${o.phash_hamming}</span></div></div>`;
+      }
+
+      if (data.vs_cropped) {
+        const c = data.vs_cropped;
+        html += `<div class="card"><h4>vs Share</h4>
+          <div class="row"><span class="lbl">Confidence</span><span class="val">${c.confidence}</span></div>
+          <div class="row"><span class="lbl">Exact</span><span class="val">${c.exact_match}</span></div>
+          <div class="row"><span class="lbl">SHA-256</span><span class="val">${c.sha256_match}</span></div>
+          <div class="row"><span class="lbl">aHash</span><span class="val">${c.ahash_hamming}</span></div>
+          <div class="row"><span class="lbl">dHash</span><span class="val">${c.dhash_hamming}</span></div>
+          <div class="row"><span class="lbl">pHash</span><span class="val">${c.phash_hamming}</span></div></div>`;
+      }
+
+      if (data.tile_match) {
+        const t = data.tile_match;
+        html += `<div class="card"><h4>Crop Detection</h4>
+          <div class="row"><span class="lbl">Detected</span><span class="val">${t.crop_detected}</span></div>
+          <div class="row"><span class="lbl">Votes</span><span class="val">${t.consistent_votes}</span></div>
+          <div class="row"><span class="lbl">Matches</span><span class="val">${t.total_matches}</span></div>
+          <div class="row"><span class="lbl">Blocks</span><span class="val">${t.tiles_checked}</span></div>`;
+        if (t.estimated_offset)
+          html += `<div class="row"><span class="lbl">Offset</span><span class="val">(${t.estimated_offset[0]}, ${t.estimated_offset[1]})</span></div>`;
+        if (t.refined_similarity) {
+          const rs = t.refined_similarity;
+          html += `<div class="row"><span class="lbl">Refined</span><span class="val">${rs.confidence}</span></div>
+            <div class="row"><span class="lbl">aHash</span><span class="val">${rs.ahash_hamming}</span></div>
+            <div class="row"><span class="lbl">dHash</span><span class="val">${rs.dhash_hamming}</span></div>
+            <div class="row"><span class="lbl">pHash</span><span class="val">${rs.phash_hamming}</span></div>`;
+        }
+        html += `</div>`;
+      }
+
+      if (data.suspect_hashes) {
+        const s = data.suspect_hashes;
+        html += `<div class="card"><h4>Suspect Hashes</h4>
+          <div class="row"><span class="lbl">SHA-256</span><span class="val" title="${s.sha256}">${s.sha256.slice(0,12)}...</span></div>
+          <div class="row"><span class="lbl">BLAKE3</span><span class="val" title="${s.blake3}">${s.blake3.slice(0,12)}...</span></div>
+          <div class="row"><span class="lbl">aHash</span><span class="val">${s.ahash}</span></div>
+          <div class="row"><span class="lbl">dHash</span><span class="val">${s.dhash}</span></div>
+          <div class="row"><span class="lbl">pHash</span><span class="val">${s.phash}</span></div></div>`;
+      }
+
+      document.getElementById('results').innerHTML = html;
+    })
+    .catch(err => { hideSpinner(); alert(err.message); });
+}
+</script>
+
+</body>
+</html>

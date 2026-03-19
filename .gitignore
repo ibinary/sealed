@@ -1,1 +1,40 @@
+# Build
 /target
+Cargo.lock
+
+# Sealed runtime output
+/sealed/
+sealed_*/
+/uploads/
+/keys/
+/test_keys/
+
+# Keys (never commit secrets)
+*.key
+
+# Test images & artifacts
+*.jpg
+*.png
+*.zip
+*_verification.json
+
+# Web marketing site (not part of the tool)
+/web/
+
+# Compiled binaries
+/builds/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Misc
+*.log
